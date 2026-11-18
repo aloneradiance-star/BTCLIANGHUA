@@ -159,7 +159,9 @@ def classify_candidate(
     down_breakout = last.close < low - Decimal("0.15") * atr
     if recent_compressed and vol_ratio >= Decimal("1.5"):
         if up_breakout:
-            return Candidate("BREAKOUT", ("COMPRESSION", "BREAKOUT_UP", "VOLUME_CONFIRMED"), metrics)
+            return Candidate(
+                "BREAKOUT", ("COMPRESSION", "BREAKOUT_UP", "VOLUME_CONFIRMED"), metrics
+            )
         if down_breakout:
             return Candidate(
                 "BREAKOUT", ("COMPRESSION", "BREAKOUT_DOWN", "VOLUME_CONFIRMED"), metrics
@@ -169,7 +171,9 @@ def classify_candidate(
         if e20 > e60 and e20higher > e60higher and e20 > e20past:
             return Candidate("BULL_TREND", ("EMA_ALIGNED_UP", "ADX_GT_23", "EMA_RISING"), metrics)
         if e20 < e60 and e20higher < e60higher and e20 < e20past:
-            return Candidate("BEAR_TREND", ("EMA_ALIGNED_DOWN", "ADX_GT_23", "EMA_FALLING"), metrics)
+            return Candidate(
+                "BEAR_TREND", ("EMA_ALIGNED_DOWN", "ADX_GT_23", "EMA_FALLING"), metrics
+            )
 
     width = high - low
     midpoint = (high + low) / 2
