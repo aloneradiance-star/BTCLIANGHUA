@@ -98,7 +98,11 @@ class CandleStore:
         if not rows:
             return {"status": "NO_DATA", "latest_open_ms": None, "gap_count": None}
         times = sorted(_milliseconds(row.open_time) for row in rows)
-        gaps = sum((b - a) // step - 1 for a, b in zip(times, times[1:], strict=False) if b > a + step)
+        gaps = sum(
+            (b - a) // step - 1
+            for a, b in zip(times, times[1:], strict=False)
+            if b > a + step
+        )
         stale = now_ms - (times[-1] + step) > 2 * step
         status = "GAP" if gaps else "STALE" if stale else "READY"
         return {
