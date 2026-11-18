@@ -1,4 +1,5 @@
 """Strict safety-first Phase 1 runtime settings."""
+
 from functools import lru_cache
 from typing import Literal, Self
 
@@ -16,9 +17,7 @@ class Settings(BaseSettings):
 
     environment: Literal["PAPER"] = "PAPER"
     live_enabled: bool = False
-    database_url: str = (
-        "postgresql+psycopg://baqs:baqs_dev_only@localhost:5432/baqs"
-    )
+    database_url: str = "postgresql+psycopg://baqs:baqs_dev_only@localhost:5432/baqs"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     @field_validator("database_url")

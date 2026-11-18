@@ -1,4 +1,5 @@
 """Deterministic, network-free SQLite fixtures."""
+
 from collections.abc import Iterator
 
 import pytest

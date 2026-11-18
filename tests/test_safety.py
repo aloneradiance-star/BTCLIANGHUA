@@ -1,4 +1,5 @@
 """Verify the foundational app cannot perform private account or live trading calls."""
+
 from pathlib import Path
 
 import pytest

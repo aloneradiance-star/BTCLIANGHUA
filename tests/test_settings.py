@@ -1,4 +1,5 @@
 """Phase 1 runtime safety tests."""
+
 import pytest
 from pydantic import ValidationError
 

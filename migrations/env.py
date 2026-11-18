@@ -1,4 +1,5 @@
 """Alembic database migration environment."""
+
 from logging.config import fileConfig
 
 from alembic import context

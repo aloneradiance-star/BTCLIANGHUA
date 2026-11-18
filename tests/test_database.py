@@ -1,4 +1,5 @@
 """ORM integrity and precision tests."""
+
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -34,9 +35,7 @@ def test_candle_precision_and_composite_key(db_engine: Engine) -> None:
         session.commit()
 
     with Session(db_engine) as session:
-        stored = session.get(
-            Candle, ("BTCUSDT", "5m", datetime(2026, 11, 17, 12, 0, tzinfo=UTC))
-        )
+        stored = session.get(Candle, ("BTCUSDT", "5m", datetime(2026, 11, 17, 12, 0, tzinfo=UTC)))
         assert stored is not None
         assert stored.open == Decimal("95000.123456789012")
         assert stored.volume == Decimal("0.012345678901")

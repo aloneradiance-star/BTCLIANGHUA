@@ -1,4 +1,5 @@
 """Read-only API and no-fabricated-market-data tests."""
+
 from datetime import UTC, datetime
 from decimal import Decimal
 

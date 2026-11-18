@@ -1,4 +1,5 @@
 """Read-only public data API. Absolutely no trading endpoints in Phase 1."""
+
 from datetime import datetime
 from typing import cast
 

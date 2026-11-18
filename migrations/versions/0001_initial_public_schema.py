@@ -3,6 +3,7 @@
 Revision ID: 0001_public
 Revises:
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -34,8 +35,10 @@ def upgrade() -> None:
         sa.Column("is_final", sa.Boolean(), nullable=False),
         sa.Column("source", sa.String(32), nullable=False),
         sa.Column(
-            "ingested_at", sa.DateTime(timezone=True),
-            server_default=sa.func.now(), nullable=False,
+            "ingested_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
         ),
         sa.PrimaryKeyConstraint("symbol", "timeframe", "open_time", name="pk_candles"),
         sa.CheckConstraint("high >= low", name="ck_candles_high_low"),
@@ -57,8 +60,10 @@ def upgrade() -> None:
         sa.Column("reasons", json_type, nullable=False),
         sa.Column("classifier_version", sa.String(32), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.func.now(), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
         ),
         sa.PrimaryKeyConstraint("id", name="pk_regime_snapshots"),
         sa.ForeignKeyConstraint(
@@ -67,7 +72,10 @@ def upgrade() -> None:
             name="fk_regime_candle",
         ),
         sa.UniqueConstraint(
-            "symbol", "timeframe", "candle_close_time", "classifier_version",
+            "symbol",
+            "timeframe",
+            "candle_close_time",
+            "classifier_version",
             name="uq_regime_snapshots_symbol",
         ),
         sa.CheckConstraint(
@@ -76,7 +84,8 @@ def upgrade() -> None:
         ),
     )
     op.create_index(
-        "ix_regimes_recent", "regime_snapshots",
+        "ix_regimes_recent",
+        "regime_snapshots",
         ["symbol", "timeframe", "candle_close_time"],
     )
 

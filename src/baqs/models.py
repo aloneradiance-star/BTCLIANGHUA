@@ -1,4 +1,5 @@
 """Public market data and versioned, auditable regime snapshots."""
+
 from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
@@ -56,8 +57,8 @@ class RegimeSnapshot(Base):
     __tablename__ = "regime_snapshots"
     __table_args__ = (
         CheckConstraint(
-            "regime IN ('BULL_TREND','BEAR_TREND','RANGE','BREAKOUT',"
-            "'HIGH_RISK','TRANSITION')", name="valid_regime"
+            "regime IN ('BULL_TREND','BEAR_TREND','RANGE','BREAKOUT','HIGH_RISK','TRANSITION')",
+            name="valid_regime",
         ),
         UniqueConstraint("symbol", "timeframe", "candle_close_time", "classifier_version"),
         Index("ix_regimes_recent", "symbol", "timeframe", "candle_close_time"),
