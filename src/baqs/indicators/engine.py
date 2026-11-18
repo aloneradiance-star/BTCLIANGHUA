@@ -3,9 +3,9 @@
 Feature rows are research observations, never an action/order or calibrated probability.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass, fields
 from decimal import Decimal
-from typing import Sequence
 
 from baqs.indicators.core import (
     bollinger,
@@ -15,6 +15,7 @@ from baqs.indicators.core import (
     trailing_percentile,
     utc_session_vwap,
     wilder_atr_adx,
+    wilder_rsi,
 )
 from baqs.market_data.schema import INTERVAL_MS, SYMBOLS, FinalCandle
 
