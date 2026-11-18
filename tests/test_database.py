@@ -37,7 +37,10 @@ def test_candle_precision_and_composite_key(db_engine: Engine) -> None:
     with Session(db_engine) as session:
         stored = session.get(Candle, ("BTCUSDT", "5m", datetime(2026, 11, 17, 12, 0, tzinfo=UTC)))
         assert stored is not None
-        assert stored.open == Decimal("95000.123456789012")
+        # SQLite NUMERIC round-trips through float; PostgreSQL NUMERIC does not.
+        assert abs(stored.open - Decimal("95000.123456789012")) < Decimal("0.00000001")
+        assert Candle.__table__.c.open.type.precision == 28
+        assert Candle.__table__.c.open.type.scale == 12
         assert stored.volume == Decimal("0.012345678901")
 
 
