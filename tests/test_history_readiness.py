@@ -1,18 +1,16 @@
 """Exact-timeframe, full-window readiness; a fresh stream is not 30d history."""
 
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, delete, insert
 
-from datetime import UTC, datetime
-
-from baqs.models import Candle
-
 from baqs.api import create_app
 from baqs.market_data.repository import CandleStore
 from baqs.market_data.schema import FinalCandle
+from baqs.models import Candle
 from baqs.settings import Settings
 
 STEP = 3_600_000
