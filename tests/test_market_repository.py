@@ -1,6 +1,5 @@
 """DB idempotency, stale-data health and gap detection tests."""
 
-from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
