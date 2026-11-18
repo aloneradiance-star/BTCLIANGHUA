@@ -115,22 +115,26 @@ def test_full_2920_bar_15m_percentile_reference_is_contiguous(db_engine: Engine)
     first_ms = end_ms - n * step
     rows = [
         {
-            "symbol": "BTCUSDT", "timeframe": "15m",
+            "symbol": "BTCUSDT",
+            "timeframe": "15m",
             "open_time": datetime.fromtimestamp((first_ms + i * step) / 1000, tz=UTC),
             "close_time": datetime.fromtimestamp((first_ms + (i + 1) * step) / 1000, tz=UTC),
-            "open": Decimal(100), "high": Decimal(102), "low": Decimal(99),
-            "close": Decimal(101), "volume": Decimal(1),
-            "quote_volume": Decimal(100), "trade_count": 5,
-            "is_final": True, "source": "TEST_FIXTURE",
+            "open": Decimal(100),
+            "high": Decimal(102),
+            "low": Decimal(99),
+            "close": Decimal(101),
+            "volume": Decimal(1),
+            "quote_volume": Decimal(100),
+            "trade_count": 5,
+            "is_final": True,
+            "source": "TEST_FIXTURE",
         }
         for i in range(n)
     ]
     with db_engine.begin() as connection:
         connection.execute(insert(Candle), rows)
     store = CandleStore(db_engine)
-    report = store.history_readiness(
-        "BTCUSDT", "15m", end_ms, required_bars=n, require_latest=True
-    )
+    report = store.history_readiness("BTCUSDT", "15m", end_ms, required_bars=n, require_latest=True)
     assert report["status"] == "READY"
     assert report["present_bars"] == n
 
@@ -140,13 +144,9 @@ def test_full_2920_bar_15m_percentile_reference_is_contiguous(db_engine: Engine)
             delete(Candle).where(
                 Candle.symbol == "BTCUSDT",
                 Candle.timeframe == "15m",
-                Candle.open_time == datetime.fromtimestamp(
-                    (first_ms + 100 * step) / 1000, tz=UTC
-                ),
+                Candle.open_time == datetime.fromtimestamp((first_ms + 100 * step) / 1000, tz=UTC),
             )
         )
-    gap = store.history_readiness(
-        "BTCUSDT", "15m", end_ms, required_bars=n, require_latest=True
-    )
+    gap = store.history_readiness("BTCUSDT", "15m", end_ms, required_bars=n, require_latest=True)
     assert gap["status"] == "GAP"
     assert gap["first_missing_open_ms"] == first_ms + 100 * step
