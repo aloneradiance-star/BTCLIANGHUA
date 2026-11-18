@@ -16,9 +16,18 @@ STEP = 3_600_000
 
 def closed(index: int) -> FinalCandle:
     return FinalCandle(
-        "BTCUSDT", "1h", index * STEP, (index + 1) * STEP,
-        Decimal(100), Decimal(102), Decimal(99), Decimal(101),
-        Decimal(1), Decimal(100), 5, "REST",
+        "BTCUSDT",
+        "1h",
+        index * STEP,
+        (index + 1) * STEP,
+        Decimal(100),
+        Decimal(102),
+        Decimal(99),
+        Decimal(101),
+        Decimal(1),
+        Decimal(100),
+        5,
+        "REST",
     )
 
 
@@ -30,9 +39,7 @@ def test_full_gapless_window_ready_but_newer_required_window_stale(db_engine: En
     assert report["status"] == "READY"
     assert report["present_bars"] == 3
     assert report["first_missing_open_ms"] is None
-    stale = store.history_readiness(
-        "BTCUSDT", "1h", 5 * STEP, required_bars=3, require_latest=True
-    )
+    stale = store.history_readiness("BTCUSDT", "1h", 5 * STEP, required_bars=3, require_latest=True)
     assert stale["status"] == "STALE"
 
 
@@ -44,9 +51,7 @@ def test_incomplete_start_and_internal_gap_are_not_ready(db_engine: Engine) -> N
     assert start_missing["status"] == "INSUFFICIENT"
     assert start_missing["first_missing_open_ms"] == STEP
     store.upsert(closed(1))
-    assert store.history_readiness(
-        "BTCUSDT", "1h", 4 * STEP, required_bars=3
-    )["status"] == "READY"
+    assert store.history_readiness("BTCUSDT", "1h", 4 * STEP, required_bars=3)["status"] == "READY"
 
 
 def test_internal_missing_open_time_reports_gap(db_engine: Engine) -> None:
@@ -60,19 +65,31 @@ def test_internal_missing_open_time_reports_gap(db_engine: Engine) -> None:
 
 def test_initial_empty_database_is_not_ready(db_engine: Engine) -> None:
     report = CandleStore(db_engine).history_readiness(
-        "ETHUSDT", "15m", 2_920 * 900_000, required_bars=2_920,
+        "ETHUSDT",
+        "15m",
+        2_920 * 900_000,
+        required_bars=2_920,
         require_latest=True,
     )
     assert report["status"] == "NO_DATA"
 
 
-@pytest.mark.parametrize("bars,end", [
-    (0, 5 * STEP), (3, 2 * STEP), (3, 4 * STEP + 1), (True, 4 * STEP),
-])
+@pytest.mark.parametrize(
+    "bars,end",
+    [
+        (0, 5 * STEP),
+        (3, 2 * STEP),
+        (3, 4 * STEP + 1),
+        (True, 4 * STEP),
+    ],
+)
 def test_invalid_window_parameters_rejected(db_engine: Engine, bars: int, end: int) -> None:
     with pytest.raises(ValueError):
         CandleStore(db_engine).history_readiness(
-            "BTCUSDT", "1h", end, required_bars=bars,
+            "BTCUSDT",
+            "1h",
+            end,
+            required_bars=bars,
         )
 
 

@@ -91,9 +91,11 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
             "symbols": {
                 symbol: {
                     timeframe: store.history_readiness(
-                        symbol, timeframe,
+                        symbol,
+                        timeframe,
                         (now_ms // INTERVAL_MS[timeframe]) * INTERVAL_MS[timeframe],
-                        required_bars=bars, require_latest=True,
+                        required_bars=bars,
+                        require_latest=True,
                     )
                     for timeframe, bars in required.items()
                 }

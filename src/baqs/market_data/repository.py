@@ -115,7 +115,6 @@ class CandleStore:
             if newer > older + step
         ]
 
-
     def history_readiness(
         self,
         symbol: str,

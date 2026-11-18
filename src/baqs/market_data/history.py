@@ -66,7 +66,11 @@ class PublicHistoryBackfill:
         self.pause_seconds = pause_seconds
 
     async def run(
-        self, symbol: str, timeframe: str, *, bars: int | None = None,
+        self,
+        symbol: str,
+        timeframe: str,
+        *,
+        bars: int | None = None,
     ) -> BackfillReport:
         if symbol not in SYMBOLS or timeframe not in DEFAULT_BARS:
             raise ValueError("Only BTC/ETH 15m and 1h public history is supported")
@@ -89,21 +93,29 @@ class PublicHistoryBackfill:
             chunk_end = min(anchor, chunk_start + self.chunk_bars * step)
             chunk_count = (chunk_end - chunk_start) // step
             readiness = self.store.history_readiness(
-                symbol, timeframe, chunk_end, required_bars=chunk_count,
+                symbol,
+                timeframe,
+                chunk_end,
+                required_bars=chunk_count,
             )
             if readiness["status"] == "READY":
                 reused += 1
                 continue
 
             segment = await self.reader.fetch_range(
-                symbol, timeframe, chunk_start, chunk_end,
-                max_bars=self.chunk_bars, page_size=self.chunk_bars,
+                symbol,
+                timeframe,
+                chunk_start,
+                chunk_end,
+                max_bars=self.chunk_bars,
+                page_size=self.chunk_bars,
             )
             if len(segment) != chunk_count:
                 raise CandleGap("REST history returned an incomplete chunk")
             for index, candle in enumerate(segment):
                 if (
-                    candle.symbol != symbol or candle.timeframe != timeframe
+                    candle.symbol != symbol
+                    or candle.timeframe != timeframe
                     or candle.open_ms != chunk_start + index * step
                     or candle.close_ms != chunk_start + (index + 1) * step
                 ):
@@ -117,25 +129,38 @@ class PublicHistoryBackfill:
                     created += 1
 
             verification = self.store.history_readiness(
-                symbol, timeframe, chunk_end, required_bars=chunk_count,
+                symbol,
+                timeframe,
+                chunk_end,
+                required_bars=chunk_count,
             )
             if verification["status"] != "READY":
                 raise CandleGap(f"Stored history chunk verification failed: {verification}")
             logger.info(
-                "History chunk verified %s %s: [%s,%s)", symbol, timeframe,
-                chunk_start, chunk_end,
+                "History chunk verified %s %s: [%s,%s)",
+                symbol,
+                timeframe,
+                chunk_start,
+                chunk_end,
             )
             if self.pause_seconds:
                 await asyncio.sleep(self.pause_seconds)
 
         final = self.store.history_readiness(
-            symbol, timeframe, anchor, required_bars=requested,
+            symbol,
+            timeframe,
+            anchor,
+            required_bars=requested,
         )
         if final["status"] != "READY":
             raise CandleGap(f"Full historical window is not ready: {final}")
         return BackfillReport(
-            symbol=symbol, timeframe=timeframe, target_bars=requested,
-            anchored_end_ms=anchor, fetched_bars=fetched,
-            created_bars=created, reused_chunks=reused,
+            symbol=symbol,
+            timeframe=timeframe,
+            target_bars=requested,
+            anchored_end_ms=anchor,
+            fetched_bars=fetched,
+            created_bars=created,
+            reused_chunks=reused,
             readiness="READY",
         )
