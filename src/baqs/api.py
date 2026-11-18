@@ -9,6 +9,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from baqs.db import make_engine
+from baqs.market_data.repository import CandleStore
+from baqs.market_data.schema import INTERVAL_MS
 from baqs.models import Candle, RegimeSnapshot
 from baqs.settings import Settings, get_settings
 
@@ -43,13 +45,38 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
             return {
                 "status": "DEGRADED",
                 "database": "UNAVAILABLE",
-                "market_data": "NOT_IMPLEMENTED",
+                "market_data": "UNAVAILABLE",
                 "execution_enabled": False,
             }
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
+        store = CandleStore(_engine(request))
+        checks = [
+            store.health(symbol, timeframe, now_ms)["status"]
+            for symbol in SYMBOLS
+            for timeframe in TIMEFRAMES
+        ]
+        ready = all(check == "READY" for check in checks)
+        if not ready:
+            response.status_code = 503
         return {
-            "status": "FOUNDATION_READY",
+            "status": "DATA_READY" if ready else "DEGRADED",
             "database": "CONNECTED",
-            "market_data": "NOT_IMPLEMENTED",
+            "market_data": "READY" if ready else "UNAVAILABLE",
+            "execution_enabled": False,
+        }
+
+    @app.get("/api/v1/market/health")
+    def market_health(request: Request) -> dict[str, object]:
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
+        store = CandleStore(_engine(request))
+        return {
+            "observed_at": datetime.now(UTC).isoformat(),
+            "feeds": {
+                symbol: {
+                    timeframe: store.health(symbol, timeframe, now_ms) for timeframe in INTERVAL_MS
+                }
+                for symbol in SYMBOLS
+            },
             "execution_enabled": False,
         }
 

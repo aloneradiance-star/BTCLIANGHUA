@@ -26,7 +26,8 @@ def test_health_reports_no_execution(db_engine: Engine) -> None:
     data = client.get("/api/v1/health").json()
     assert data["database"] == "CONNECTED"
     assert data["execution_enabled"] is False
-    assert data["market_data"] == "NOT_IMPLEMENTED"
+    assert data["market_data"] == "UNAVAILABLE"
+    assert client.get("/api/v1/health").status_code == 503
 
 
 def test_absent_regimes_unavailable(db_engine: Engine) -> None:
@@ -92,3 +93,12 @@ def test_no_write_or_trading_routes(db_engine: Engine) -> None:
         assert "order" not in path.lower()
         assert "account" not in path.lower()
         assert set(operations).issubset({"get"})
+
+
+def test_market_health_no_data_does_not_claim_ready(db_engine: Engine) -> None:
+    response = client_for(db_engine).get("/api/v1/market/health")
+    assert response.status_code == 200
+    feeds = response.json()["feeds"]
+    assert feeds["BTCUSDT"]["1m"]["status"] == "NO_DATA"
+    assert feeds["ETHUSDT"]["1h"]["status"] == "NO_DATA"
+    assert response.json()["execution_enabled"] is False
