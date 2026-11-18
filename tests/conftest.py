@@ -16,6 +16,7 @@ def db_engine() -> Iterator[Engine]:
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
+        use_insertmanyvalues=False,
     )
 
     @event.listens_for(engine, "connect")
