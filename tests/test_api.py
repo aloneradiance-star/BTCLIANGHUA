@@ -13,7 +13,10 @@ from baqs.settings import Settings
 
 def client_for(engine: Engine) -> TestClient:
     return TestClient(
-        create_app(settings=Settings(_env_file=None, database_url="sqlite:///:memory:"), engine=engine)
+        create_app(
+            settings=Settings(_env_file=None, database_url="sqlite:///:memory:"),
+            engine=engine,
+        )
     )
 
 
