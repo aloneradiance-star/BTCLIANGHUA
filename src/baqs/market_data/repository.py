@@ -1,7 +1,6 @@
 """Immutable finalized-candle storage and window-based health checks."""
 
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import Literal
 
 from sqlalchemy import Engine, select
@@ -83,7 +82,7 @@ class CandleStore:
         times = sorted(_milliseconds(value) for value in values)
         return [
             (older + step, newer)
-            for older, newer in zip(times, times[1:])
+            for older, newer in zip(times, times[1:], strict=False)
             if newer > older + step
         ]
 
@@ -99,7 +98,7 @@ class CandleStore:
         if not rows:
             return {"status": "NO_DATA", "latest_open_ms": None, "gap_count": None}
         times = sorted(_milliseconds(row.open_time) for row in rows)
-        gaps = sum((b - a) // step - 1 for a, b in zip(times, times[1:]) if b > a + step)
+        gaps = sum((b - a) // step - 1 for a, b in zip(times, times[1:], strict=False) if b > a + step)
         stale = now_ms - (times[-1] + step) > 2 * step
         status = "GAP" if gaps else "STALE" if stale else "READY"
         return {
