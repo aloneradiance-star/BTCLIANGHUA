@@ -33,7 +33,10 @@ def upgrade() -> None:
         sa.Column("trade_count", sa.Integer()),
         sa.Column("is_final", sa.Boolean(), nullable=False),
         sa.Column("source", sa.String(32), nullable=False),
-        sa.Column("ingested_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "ingested_at", sa.DateTime(timezone=True),
+            server_default=sa.func.now(), nullable=False,
+        ),
         sa.PrimaryKeyConstraint("symbol", "timeframe", "open_time", name="pk_candles"),
         sa.CheckConstraint("high >= low", name="ck_candles_high_low"),
         sa.CheckConstraint("high >= open AND high >= close", name="ck_candles_high_ohlc"),
@@ -53,7 +56,10 @@ def upgrade() -> None:
         sa.Column("features", json_type, nullable=False),
         sa.Column("reasons", json_type, nullable=False),
         sa.Column("classifier_version", sa.String(32), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True),
+            server_default=sa.func.now(), nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id", name="pk_regime_snapshots"),
         sa.ForeignKeyConstraint(
             ["symbol", "timeframe", "candle_open_time"],
