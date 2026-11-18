@@ -224,4 +224,5 @@ def test_partial_chunk_crash_resumes_without_duplicate_inserts(db_engine: Engine
         assert recovered.created_bars == 54
         assert recovered.fetched_bars == 60
         assert recovered.reused_chunks == 0
+
     asyncio.run(run())
