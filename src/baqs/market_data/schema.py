@@ -143,7 +143,10 @@ def from_ws_message(payload: object) -> FinalCandle | None:
     k = event.get("k")
     if not isinstance(k, dict):
         raise InvalidCandle("WebSocket kline object is missing")
-    if k.get("x") is not True:
+    closed = k.get("x")
+    if type(closed) is not bool:
+        raise InvalidCandle("WebSocket final-candle flag is missing or invalid")
+    if not closed:
         return None
     symbol, timeframe = event.get("s"), k.get("i")
     if symbol != k.get("s") or not isinstance(symbol, str) or not isinstance(timeframe, str):
