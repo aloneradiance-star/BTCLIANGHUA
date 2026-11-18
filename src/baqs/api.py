@@ -52,7 +52,8 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
         store = CandleStore(_engine(request))
         checks = [
             store.health(symbol, timeframe, now_ms)["status"]
-            for symbol in SYMBOLS for timeframe in TIMEFRAMES
+            for symbol in SYMBOLS
+            for timeframe in TIMEFRAMES
         ]
         ready = all(check == "READY" for check in checks)
         if not ready:
@@ -72,8 +73,7 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
             "observed_at": datetime.now(UTC).isoformat(),
             "feeds": {
                 symbol: {
-                    timeframe: store.health(symbol, timeframe, now_ms)
-                    for timeframe in INTERVAL_MS
+                    timeframe: store.health(symbol, timeframe, now_ms) for timeframe in INTERVAL_MS
                 }
                 for symbol in SYMBOLS
             },

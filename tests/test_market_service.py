@@ -15,9 +15,18 @@ STEP = 60_000
 
 def bar(index: int, *, source: str = "REST") -> FinalCandle:
     return FinalCandle(
-        "BTCUSDT", "1m", index * STEP, (index + 1) * STEP,
-        Decimal("100"), Decimal("103"), Decimal("99"), Decimal("101"),
-        Decimal("5"), Decimal("500"), 10, source,
+        "BTCUSDT",
+        "1m",
+        index * STEP,
+        (index + 1) * STEP,
+        Decimal("100"),
+        Decimal("103"),
+        Decimal("99"),
+        Decimal("101"),
+        Decimal("5"),
+        Decimal("500"),
+        10,
+        source,
     )
 
 
@@ -31,13 +40,18 @@ class StubREST:
         return self.latest_ms
 
     async def fetch_range(
-        self, symbol: str, timeframe: str, start_ms: int, end_ms: int,
-        *, max_bars: int = 2000, page_size: int = 499,
+        self,
+        symbol: str,
+        timeframe: str,
+        start_ms: int,
+        end_ms: int,
+        *,
+        max_bars: int = 2000,
+        page_size: int = 499,
     ) -> list[FinalCandle]:
         assert symbol == "BTCUSDT" and timeframe == "1m"
         self.calls.append((start_ms, end_ms))
-        result = [bar(i) for i in range(start_ms // STEP, end_ms // STEP)
-                  if i not in self.missing]
+        result = [bar(i) for i in range(start_ms // STEP, end_ms // STEP) if i not in self.missing]
         if len(result) != (end_ms - start_ms) // STEP:
             raise CandleGap("Simulated REST history gap")
         return result
@@ -53,6 +67,7 @@ def test_bootstrap_recovers_hole_older_than_overlap(db_engine: Engine) -> None:
         await service.bootstrap("BTCUSDT", "1m")
         assert store.gap_ranges("BTCUSDT", "1m") == []
         assert (3 * STEP, 4 * STEP) in stub.calls
+
     asyncio.run(run())
 
 
@@ -68,6 +83,7 @@ def test_gap_filled_before_accepting_later_ws_candle(db_engine: Engine) -> None:
         assert (2 * STEP, 4 * STEP) in stub.calls
         # Out-of-order duplicate is non-destructive
         assert await service.ingest(bar(2, source="WS")) == "DUPLICATE"
+
     asyncio.run(run())
 
 
@@ -76,9 +92,11 @@ def test_failed_repair_does_not_persist_later_ws_candle(db_engine: Engine) -> No
         store = CandleStore(db_engine)
         store.upsert(bar(1))
         service = PublicMarketDataService(
-            StubREST(6 * STEP, missing={2}), store  # type: ignore[arg-type]
+            StubREST(6 * STEP, missing={2}),
+            store,  # type: ignore[arg-type]
         )
         with pytest.raises(CandleGap):
             await service.ingest(bar(4, source="WS"))
         assert store.latest_open_ms("BTCUSDT", "1m") == STEP
+
     asyncio.run(run())

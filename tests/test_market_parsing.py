@@ -9,8 +9,18 @@ from baqs.market_data.schema import InvalidCandle, from_rest_row, from_ws_messag
 
 def rest_row(start: int = 0) -> list[object]:
     return [
-        start, "95000.00", "95005", "94990", "95001", "1.25",
-        start + 59_999, "100", 12, "0.5", "50", "0",
+        start,
+        "95000.00",
+        "95005",
+        "94990",
+        "95001",
+        "1.25",
+        start + 59_999,
+        "100",
+        12,
+        "0.5",
+        "50",
+        "0",
     ]
 
 
@@ -18,12 +28,22 @@ def ws_event(start: int = 0, *, closed: bool = True) -> dict[str, object]:
     return {
         "stream": "btcusdt@kline_1m",
         "data": {
-            "e": "kline", "E": start + 59_999, "s": "BTCUSDT",
+            "e": "kline",
+            "E": start + 59_999,
+            "s": "BTCUSDT",
             "k": {
-                "t": start, "T": start + 59_999, "s": "BTCUSDT",
-                "i": "1m", "o": "95000.00", "h": "95005",
-                "l": "94990", "c": "95001", "v": "1.25", "q": "100",
-                "n": 12, "x": closed,
+                "t": start,
+                "T": start + 59_999,
+                "s": "BTCUSDT",
+                "i": "1m",
+                "o": "95000.00",
+                "h": "95005",
+                "l": "94990",
+                "c": "95001",
+                "v": "1.25",
+                "q": "100",
+                "n": 12,
+                "x": closed,
             },
         },
     }
@@ -55,10 +75,13 @@ def test_websocket_final_matches_rest() -> None:
     assert bar.volume == Decimal("1.25")
 
 
-@pytest.mark.parametrize("field,value", [
-    ("stream", "ethusdt@kline_1m"),
-    ("data", {"e": "kline", "k": {}}),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("stream", "ethusdt@kline_1m"),
+        ("data", {"e": "kline", "k": {}}),
+    ],
+)
 def test_mismatched_or_invalid_websocket_rejected(field: str, value: object) -> None:
     payload = ws_event()
     payload[field] = value

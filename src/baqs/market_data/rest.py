@@ -50,8 +50,14 @@ class PublicFuturesREST:
         return value["serverTime"]
 
     async def fetch_range(
-        self, symbol: str, timeframe: str, start_ms: int, end_ms: int,
-        *, max_bars: int = 2000, page_size: int = 499,
+        self,
+        symbol: str,
+        timeframe: str,
+        start_ms: int,
+        end_ms: int,
+        *,
+        max_bars: int = 2000,
+        page_size: int = 499,
     ) -> list[FinalCandle]:
         """Fetch a complete [start_ms, end_ms) sequence of finalized candles.
 
@@ -77,10 +83,16 @@ class PublicFuturesREST:
         cursor = start_ms
         while cursor < upper:
             amount = min(page_size, (upper - cursor) // step)
-            response = await self._request("/fapi/v1/klines", {
-                "symbol": symbol, "interval": timeframe,
-                "startTime": cursor, "endTime": upper - 1, "limit": amount,
-            })
+            response = await self._request(
+                "/fapi/v1/klines",
+                {
+                    "symbol": symbol,
+                    "interval": timeframe,
+                    "startTime": cursor,
+                    "endTime": upper - 1,
+                    "limit": amount,
+                },
+            )
             if not isinstance(response, list):
                 raise InvalidCandle("Kline endpoint did not return a list")
             rows: Sequence[FinalCandle] = [

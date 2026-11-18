@@ -11,8 +11,12 @@ logger = logging.getLogger(__name__)
 
 class PublicMarketDataService:
     def __init__(
-        self, rest: PublicFuturesREST, store: CandleStore,
-        *, initial_bars: int = 120, overlap_bars: int = 20,
+        self,
+        rest: PublicFuturesREST,
+        store: CandleStore,
+        *,
+        initial_bars: int = 120,
+        overlap_bars: int = 20,
     ) -> None:
         if initial_bars < 1 or overlap_bars < 1:
             raise ValueError("Lookback and overlap must be positive")
@@ -32,7 +36,8 @@ class PublicMarketDataService:
         start = max(
             0,
             upper - self.initial_bars * step
-            if latest is None else latest - (self.overlap_bars - 1) * step,
+            if latest is None
+            else latest - (self.overlap_bars - 1) * step,
         )
         if latest is None and start == 0:
             start = 0

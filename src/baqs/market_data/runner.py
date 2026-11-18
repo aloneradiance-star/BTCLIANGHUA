@@ -45,8 +45,12 @@ async def run_collector() -> None:
             while True:
                 try:
                     async with connect(
-                        combined_stream_url(), ping_interval=20, ping_timeout=20,
-                        max_queue=256, open_timeout=10, close_timeout=5,
+                        combined_stream_url(),
+                        ping_interval=20,
+                        ping_timeout=20,
+                        max_queue=256,
+                        open_timeout=10,
+                        close_timeout=5,
                     ) as ws:
                         # REST replay AFTER websocket connection; buffered events are
                         # processed after reconciliation to close the reconnect race.
@@ -59,8 +63,13 @@ async def run_collector() -> None:
                             if candle is not None:
                                 await service.ingest(candle)
                 except (
-                    ConnectionClosed, InvalidHandshake, OSError, TimeoutError,
-                    MarketDataError, json.JSONDecodeError, httpx.HTTPError,
+                    ConnectionClosed,
+                    InvalidHandshake,
+                    OSError,
+                    TimeoutError,
+                    MarketDataError,
+                    json.JSONDecodeError,
+                    httpx.HTTPError,
                 ) as exc:
                     logger.warning(
                         "Public market stream unhealthy; reconnecting: %s", type(exc).__name__

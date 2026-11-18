@@ -24,22 +24,35 @@ class CandleStore:
 
     def upsert(self, candle: FinalCandle) -> StoreResult:
         with Session(self.engine) as session:
-            existing = session.get(Candle, (
-                candle.symbol, candle.timeframe, candle.open_time
-            ))
+            existing = session.get(Candle, (candle.symbol, candle.timeframe, candle.open_time))
             if existing is None:
-                session.add(Candle(
-                    symbol=candle.symbol, timeframe=candle.timeframe,
-                    open_time=candle.open_time, close_time=candle.close_time,
-                    open=candle.open, high=candle.high, low=candle.low, close=candle.close,
-                    volume=candle.volume, quote_volume=candle.quote_volume,
-                    trade_count=candle.trade_count, is_final=True, source=candle.source,
-                ))
+                session.add(
+                    Candle(
+                        symbol=candle.symbol,
+                        timeframe=candle.timeframe,
+                        open_time=candle.open_time,
+                        close_time=candle.close_time,
+                        open=candle.open,
+                        high=candle.high,
+                        low=candle.low,
+                        close=candle.close,
+                        volume=candle.volume,
+                        quote_volume=candle.quote_volume,
+                        trade_count=candle.trade_count,
+                        is_final=True,
+                        source=candle.source,
+                    )
+                )
                 session.commit()
                 return "CREATED"
             old_fingerprint = (
-                existing.open, existing.high, existing.low, existing.close, existing.volume,
-                existing.quote_volume, existing.trade_count,
+                existing.open,
+                existing.high,
+                existing.low,
+                existing.close,
+                existing.volume,
+                existing.quote_volume,
+                existing.trade_count,
             )
             # SQLite fixture NUMERIC conversion is approximate; tests use whole-number prices.
             if existing.is_final:
@@ -63,22 +76,38 @@ class CandleStore:
 
     def latest_open_ms(self, symbol: str, timeframe: str) -> int | None:
         with Session(self.engine) as session:
-            value = session.scalar(select(Candle.open_time).where(
-                Candle.symbol == symbol, Candle.timeframe == timeframe,
-                Candle.is_final.is_(True),
-            ).order_by(Candle.open_time.desc()).limit(1))
+            value = session.scalar(
+                select(Candle.open_time)
+                .where(
+                    Candle.symbol == symbol,
+                    Candle.timeframe == timeframe,
+                    Candle.is_final.is_(True),
+                )
+                .order_by(Candle.open_time.desc())
+                .limit(1)
+            )
         return None if value is None else _milliseconds(value)
 
     def gap_ranges(
-        self, symbol: str, timeframe: str, *, window: int = 240,
+        self,
+        symbol: str,
+        timeframe: str,
+        *,
+        window: int = 240,
     ) -> list[tuple[int, int]]:
         """List missing half-open windows between recent finalized candles."""
         step = INTERVAL_MS[timeframe]
         with Session(self.engine) as session:
-            values = session.scalars(select(Candle.open_time).where(
-                Candle.symbol == symbol, Candle.timeframe == timeframe,
-                Candle.is_final.is_(True),
-            ).order_by(Candle.open_time.desc()).limit(window)).all()
+            values = session.scalars(
+                select(Candle.open_time)
+                .where(
+                    Candle.symbol == symbol,
+                    Candle.timeframe == timeframe,
+                    Candle.is_final.is_(True),
+                )
+                .order_by(Candle.open_time.desc())
+                .limit(window)
+            ).all()
         times = sorted(_milliseconds(value) for value in values)
         return [
             (older + step, newer)
@@ -87,25 +116,36 @@ class CandleStore:
         ]
 
     def health(
-        self, symbol: str, timeframe: str, now_ms: int, *, window: int = 240,
+        self,
+        symbol: str,
+        timeframe: str,
+        now_ms: int,
+        *,
+        window: int = 240,
     ) -> dict[str, object]:
         step = INTERVAL_MS[timeframe]
         with Session(self.engine) as session:
-            rows = session.scalars(select(Candle).where(
-                Candle.symbol == symbol, Candle.timeframe == timeframe,
-                Candle.is_final.is_(True),
-            ).order_by(Candle.open_time.desc()).limit(window)).all()
+            rows = session.scalars(
+                select(Candle)
+                .where(
+                    Candle.symbol == symbol,
+                    Candle.timeframe == timeframe,
+                    Candle.is_final.is_(True),
+                )
+                .order_by(Candle.open_time.desc())
+                .limit(window)
+            ).all()
         if not rows:
             return {"status": "NO_DATA", "latest_open_ms": None, "gap_count": None}
         times = sorted(_milliseconds(row.open_time) for row in rows)
         gaps = sum(
-            (b - a) // step - 1
-            for a, b in zip(times, times[1:], strict=False)
-            if b > a + step
+            (b - a) // step - 1 for a, b in zip(times, times[1:], strict=False) if b > a + step
         )
         stale = now_ms - (times[-1] + step) > 2 * step
         status = "GAP" if gaps else "STALE" if stale else "READY"
         return {
-            "status": status, "latest_open_ms": times[-1],
-            "gap_count": gaps, "checked_bars": len(times),
+            "status": status,
+            "latest_open_ms": times[-1],
+            "gap_count": gaps,
+            "checked_bars": len(times),
         }

@@ -71,9 +71,10 @@ class FinalCandle:
             raise InvalidCandle("Candle opening is not aligned to UTC interval")
         if self.close_ms != self.open_ms + INTERVAL_MS[self.timeframe]:
             raise InvalidCandle("Candle close boundary is inconsistent with interval")
-        if not all(v.is_finite() for v in (
-            self.open, self.high, self.low, self.close, self.volume, self.quote_volume
-        )):
+        if not all(
+            v.is_finite()
+            for v in (self.open, self.high, self.low, self.close, self.volume, self.quote_volume)
+        ):
             raise InvalidCandle("Non-finite OHLCV")
         if min(self.open, self.high, self.low, self.close) <= 0:
             raise InvalidCandle("OHLC prices must be positive")
@@ -94,8 +95,13 @@ class FinalCandle:
 
     def fingerprint(self) -> tuple[object, ...]:
         return (
-            self.open, self.high, self.low, self.close, self.volume,
-            self.quote_volume, self.trade_count,
+            self.open,
+            self.high,
+            self.low,
+            self.close,
+            self.volume,
+            self.quote_volume,
+            self.trade_count,
         )
 
 
@@ -110,10 +116,18 @@ def from_rest_row(symbol: str, timeframe: str, row: object, now_ms: int) -> Fina
     if type(count) is not int:
         raise InvalidCandle("REST trade count is not an integer")
     return FinalCandle(
-        symbol, timeframe, open_ms, end_ms,
-        _as_decimal(row[1]), _as_decimal(row[2]), _as_decimal(row[3]),
-        _as_decimal(row[4]), _as_decimal(row[5]), _as_decimal(row[7]),
-        count, "REST",
+        symbol,
+        timeframe,
+        open_ms,
+        end_ms,
+        _as_decimal(row[1]),
+        _as_decimal(row[2]),
+        _as_decimal(row[3]),
+        _as_decimal(row[4]),
+        _as_decimal(row[5]),
+        _as_decimal(row[7]),
+        count,
+        "REST",
     )
 
 
@@ -141,8 +155,16 @@ def from_ws_message(payload: object) -> FinalCandle | None:
     if type(count) is not int:
         raise InvalidCandle("WebSocket trade count is not an integer")
     return FinalCandle(
-        symbol, timeframe, _as_ms(k.get("t")), _as_ms(k.get("T")) + 1,
-        _as_decimal(k.get("o")), _as_decimal(k.get("h")),
-        _as_decimal(k.get("l")), _as_decimal(k.get("c")),
-        _as_decimal(k.get("v")), _as_decimal(k.get("q")), count, "WS",
+        symbol,
+        timeframe,
+        _as_ms(k.get("t")),
+        _as_ms(k.get("T")) + 1,
+        _as_decimal(k.get("o")),
+        _as_decimal(k.get("h")),
+        _as_decimal(k.get("l")),
+        _as_decimal(k.get("c")),
+        _as_decimal(k.get("v")),
+        _as_decimal(k.get("q")),
+        count,
+        "WS",
     )

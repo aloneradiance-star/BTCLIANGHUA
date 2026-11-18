@@ -15,12 +15,18 @@ STEP = 60_000
 
 def bar(index: int, price: str = "100") -> FinalCandle:
     return FinalCandle(
-        symbol="BTCUSDT", timeframe="1m",
-        open_ms=index * STEP, close_ms=(index + 1) * STEP,
-        open=Decimal(price), high=Decimal("103"),
-        low=Decimal("99"), close=Decimal("101"),
-        volume=Decimal("5"), quote_volume=Decimal("500"),
-        trade_count=10, source="WS",
+        symbol="BTCUSDT",
+        timeframe="1m",
+        open_ms=index * STEP,
+        close_ms=(index + 1) * STEP,
+        open=Decimal(price),
+        high=Decimal("103"),
+        low=Decimal("99"),
+        close=Decimal("101"),
+        volume=Decimal("5"),
+        quote_volume=Decimal("500"),
+        trade_count=10,
+        source="WS",
     )
 
 
@@ -55,13 +61,23 @@ def test_stored_provisional_candle_is_promoted(db_engine: Engine) -> None:
     store = CandleStore(db_engine)
     first = bar(1)
     with Session(db_engine) as session:
-        session.add(Candle(
-            symbol=first.symbol, timeframe=first.timeframe,
-            open_time=first.open_time, close_time=first.close_time,
-            open=first.open, high=first.high, low=first.low, close=first.close,
-            volume=first.volume, quote_volume=first.quote_volume,
-            trade_count=first.trade_count, is_final=False, source="OLD_TEST",
-        ))
+        session.add(
+            Candle(
+                symbol=first.symbol,
+                timeframe=first.timeframe,
+                open_time=first.open_time,
+                close_time=first.close_time,
+                open=first.open,
+                high=first.high,
+                low=first.low,
+                close=first.close,
+                volume=first.volume,
+                quote_volume=first.quote_volume,
+                trade_count=first.trade_count,
+                is_final=False,
+                source="OLD_TEST",
+            )
+        )
         session.commit()
     assert store.upsert(first) == "PROMOTED"
     assert store.upsert(first) == "DUPLICATE"
