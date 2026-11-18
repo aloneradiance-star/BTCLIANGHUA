@@ -5,8 +5,8 @@ import pytest
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.pool import StaticPool
 
-from baqs.db import Base
 from baqs import models  # noqa: F401
+from baqs.db import Base
 
 
 @pytest.fixture
