@@ -4,8 +4,16 @@ from decimal import Decimal
 from uuid import uuid4
 
 from sqlalchemy import (
-    JSON, Boolean, CheckConstraint, DateTime, ForeignKeyConstraint,
-    Index, Numeric, String, UniqueConstraint, func,
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKeyConstraint,
+    Index,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
