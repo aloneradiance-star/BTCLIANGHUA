@@ -38,7 +38,9 @@ def _to_final_candle(item: Candle) -> FinalCandle:
         low=item.low,
         close=item.close,
         volume=item.volume,
-        quote_volume=item.quote_volume if item.quote_volume is not None else item.volume * item.close,
+        quote_volume=(
+            item.quote_volume if item.quote_volume is not None else item.volume * item.close
+        ),
         trade_count=item.trade_count if item.trade_count is not None else 0,
         source="REST" if item.source != "WS" else "WS",
     )
