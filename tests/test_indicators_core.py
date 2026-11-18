@@ -204,7 +204,10 @@ def test_realized_volatility_flat_and_geometric_constant_returns() -> None:
     geometric = [Decimal(2) ** i for i in range(30)]
     assert realized_volatility(flat)[19] is None
     assert realized_volatility(flat)[20] == Decimal(0)
-    assert realized_volatility(geometric)[20] == Decimal(0)
+    geometric_vol = realized_volatility(geometric)[20]
+    assert geometric_vol is not None
+    # Decimal log/mean rounding at 40 digits can leave ~1e-39 residual noise.
+    assert abs(geometric_vol) < Decimal("1e-35")
 
 
 @pytest.mark.parametrize(
