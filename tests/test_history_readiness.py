@@ -1,6 +1,5 @@
 """Exact-timeframe, full-window readiness; a fresh stream is not 30d history."""
 
-from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
