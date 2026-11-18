@@ -1,5 +1,5 @@
 """ORM integrity and precision tests."""
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -14,8 +14,8 @@ def candle(**overrides: object) -> Candle:
     params: dict[str, object] = {
         "symbol": "BTCUSDT",
         "timeframe": "5m",
-        "open_time": datetime(2026, 11, 17, 12, 0, tzinfo=timezone.utc),
-        "close_time": datetime(2026, 11, 17, 12, 5, tzinfo=timezone.utc),
+        "open_time": datetime(2026, 11, 17, 12, 0, tzinfo=UTC),
+        "close_time": datetime(2026, 11, 17, 12, 5, tzinfo=UTC),
         "open": Decimal("95000.123456789012"),
         "high": Decimal("95005"),
         "low": Decimal("94990"),
@@ -35,7 +35,7 @@ def test_candle_precision_and_composite_key(db_engine: Engine) -> None:
 
     with Session(db_engine) as session:
         stored = session.get(
-            Candle, ("BTCUSDT", "5m", datetime(2026, 11, 17, 12, 0, tzinfo=timezone.utc))
+            Candle, ("BTCUSDT", "5m", datetime(2026, 11, 17, 12, 0, tzinfo=UTC))
         )
         assert stored is not None
         assert stored.open == Decimal("95000.123456789012")
@@ -63,8 +63,8 @@ def test_regime_snapshot_requires_existing_candle(db_engine: Engine) -> None:
             RegimeSnapshot(
                 symbol="BTCUSDT",
                 timeframe="15m",
-                candle_open_time=datetime(2026, 11, 17, 12, 0, tzinfo=timezone.utc),
-                candle_close_time=datetime(2026, 11, 17, 12, 15, tzinfo=timezone.utc),
+                candle_open_time=datetime(2026, 11, 17, 12, 0, tzinfo=UTC),
+                candle_close_time=datetime(2026, 11, 17, 12, 15, tzinfo=UTC),
                 regime="TRANSITION",
                 features={},
                 reasons=["WARMUP"],
@@ -75,7 +75,7 @@ def test_regime_snapshot_requires_existing_candle(db_engine: Engine) -> None:
 
 
 def test_regime_saved_with_existing_candle(db_engine: Engine) -> None:
-    bar = candle(timeframe="15m", close_time=datetime(2026, 11, 17, 12, 15, tzinfo=timezone.utc))
+    bar = candle(timeframe="15m", close_time=datetime(2026, 11, 17, 12, 15, tzinfo=UTC))
     with Session(db_engine) as session:
         session.add(bar)
         session.flush()
