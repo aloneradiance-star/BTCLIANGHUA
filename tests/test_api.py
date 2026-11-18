@@ -1,5 +1,5 @@
 """Read-only API and no-fabricated-market-data tests."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -35,14 +35,14 @@ def test_absent_regimes_unavailable(db_engine: Engine) -> None:
 
 
 def test_candles_only_returns_finalized(db_engine: Engine) -> None:
-    moment = datetime(2026, 11, 17, 12, 0, tzinfo=timezone.utc)
+    moment = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
     with Session(db_engine) as session:
         session.add(
             Candle(
                 symbol="BTCUSDT",
                 timeframe="5m",
                 open_time=moment,
-                close_time=datetime(2026, 11, 17, 12, 5, tzinfo=timezone.utc),
+                close_time=datetime(2026, 11, 17, 12, 5, tzinfo=UTC),
                 open=Decimal("95000"),
                 high=Decimal("95010"),
                 low=Decimal("94990"),
@@ -56,8 +56,8 @@ def test_candles_only_returns_finalized(db_engine: Engine) -> None:
             Candle(
                 symbol="BTCUSDT",
                 timeframe="5m",
-                open_time=datetime(2026, 11, 17, 12, 5, tzinfo=timezone.utc),
-                close_time=datetime(2026, 11, 17, 12, 10, tzinfo=timezone.utc),
+                open_time=datetime(2026, 11, 17, 12, 5, tzinfo=UTC),
+                close_time=datetime(2026, 11, 17, 12, 10, tzinfo=UTC),
                 open=Decimal("95002"),
                 high=Decimal("95006"),
                 low=Decimal("95001"),
