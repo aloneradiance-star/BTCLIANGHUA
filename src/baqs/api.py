@@ -80,6 +80,28 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
             "execution_enabled": False,
         }
 
+    @app.get("/api/v1/market/history-readiness")
+    def history_readiness(request: Request) -> dict[str, object]:
+        """Read-only historical completeness gate for future classifier."""
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
+        store = CandleStore(_engine(request))
+        required = {"15m": 2920, "1h": 120}
+        return {
+            "observed_at": datetime.now(UTC).isoformat(),
+            "symbols": {
+                symbol: {
+                    timeframe: store.history_readiness(
+                        symbol, timeframe,
+                        (now_ms // INTERVAL_MS[timeframe]) * INTERVAL_MS[timeframe],
+                        required_bars=bars, require_latest=True,
+                    )
+                    for timeframe, bars in required.items()
+                }
+                for symbol in SYMBOLS
+            },
+            "execution_enabled": False,
+        }
+
     @app.get("/api/v1/market/candles")
     def candles(
         request: Request,
