@@ -189,3 +189,36 @@ def test_public_http_transport_integration_with_all_expected_bars(db_engine: Eng
         assert report.readiness == "READY"
 
     asyncio.run(run())
+
+
+def test_partial_chunk_crash_resumes_without_duplicate_inserts(db_engine: Engine) -> None:
+    class FailingStore(CandleStore):
+        def __init__(self, engine: Engine) -> None:
+            super().__init__(engine)
+            self.attempts = 0
+
+        def upsert(self, candle: FinalCandle) -> str:
+            self.attempts += 1
+            if self.attempts == 7:
+                raise RuntimeError("Injected crash halfway through a chunk")
+            return super().upsert(candle)
+
+    async def run() -> None:
+        failing_store = FailingStore(db_engine)
+        reader = StubReader()
+        with pytest.raises(RuntimeError, match="halfway"):
+            await PublicHistoryBackfill(
+                reader, failing_store, chunk_bars=20, pause_seconds=0
+            ).run("BTCUSDT", "1h", bars=60)
+        recovered_store = CandleStore(db_engine)
+        assert recovered_store.history_readiness(
+            "BTCUSDT", "1h", 40 * STEP, required_bars=20
+        )["status"] != "READY"
+        recovered = await PublicHistoryBackfill(
+            reader, recovered_store, chunk_bars=20, pause_seconds=0
+        ).run("BTCUSDT", "1h", bars=60)
+        assert recovered.readiness == "READY"
+        assert recovered.created_bars == 54
+        assert recovered.fetched_bars == 60
+        assert recovered.reused_chunks == 0
+    asyncio.run(run())
