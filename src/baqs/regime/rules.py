@@ -12,9 +12,16 @@ from baqs.indicators.engine import FeatureRow
 from baqs.market_data.schema import FinalCandle
 
 REGIME_VERSION = "rules-0.1"
-REGIMES = frozenset({
-    "BULL_TREND", "BEAR_TREND", "RANGE", "BREAKOUT", "HIGH_RISK", "TRANSITION",
-})
+REGIMES = frozenset(
+    {
+        "BULL_TREND",
+        "BEAR_TREND",
+        "RANGE",
+        "BREAKOUT",
+        "HIGH_RISK",
+        "TRANSITION",
+    }
+)
 
 
 class RegimeUnavailable(Exception):
@@ -55,7 +62,7 @@ def _boundary_tests(
     for i in range(len(candles) - 1):
         if i - last_test < 3:
             continue
-        after = candles[i + 1:i + 4]
+        after = candles[i + 1 : i + 4]
         if side == "LOWER":
             touched = candles[i].low <= boundary + Decimal("0.25") * atr
             reversed_ = any(bar.close >= boundary + Decimal("0.5") * atr for bar in after)
@@ -151,8 +158,7 @@ def classify_candidate(
     low = min(bar.low for bar in previous20)
     last = bars15[-1]
     recent_compressed = any(
-        row.bb_width_percentile_30d is not None
-        and row.bb_width_percentile_30d <= Decimal("0.2")
+        row.bb_width_percentile_30d is not None and row.bb_width_percentile_30d <= Decimal("0.2")
         for row in features15[-4:-1]
     )
     up_breakout = last.close > high + Decimal("0.15") * atr

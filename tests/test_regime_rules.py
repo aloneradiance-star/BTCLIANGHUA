@@ -16,9 +16,18 @@ STEP1H = 3_600_000
 def bar(index: int, *, timeframe: str = "15m") -> FinalCandle:
     step = STEP1H if timeframe == "1h" else STEP15
     return FinalCandle(
-        "BTCUSDT", timeframe, index * step, (index + 1) * step,
-        Decimal(100), Decimal(101), Decimal(99), Decimal(100),
-        Decimal(1), Decimal(100), 10, "REST",
+        "BTCUSDT",
+        timeframe,
+        index * step,
+        (index + 1) * step,
+        Decimal(100),
+        Decimal(101),
+        Decimal(99),
+        Decimal(100),
+        Decimal(1),
+        Decimal(100),
+        10,
+        "REST",
     )
 
 
@@ -43,7 +52,10 @@ def feature(candle: FinalCandle, **replace_fields: Decimal | None) -> FeatureRow
     }
     defaults.update(replace_fields)
     return FeatureRow(
-        candle.symbol, candle.timeframe, candle.open_ms, candle.close_ms,
+        candle.symbol,
+        candle.timeframe,
+        candle.open_ms,
+        candle.close_ms,
         **defaults,  # type: ignore[arg-type]
     )
 
@@ -68,14 +80,14 @@ def test_range_requires_two_confirmed_tests_of_each_edge() -> None:
 def test_ema_aligned_trends_with_confirmed_adx(direction: str) -> None:
     candles, feats15, feats1h = fixtures()
     if direction == "UP":
-        feats15[-1] = replace(feats15[-1], ema20=Decimal(120), ema60=Decimal(100),
-                              adx14=Decimal(28))
+        feats15[-1] = replace(
+            feats15[-1], ema20=Decimal(120), ema60=Decimal(100), adx14=Decimal(28)
+        )
         feats15[-4] = replace(feats15[-4], ema20=Decimal(119))
         feats1h[-1] = replace(feats1h[-1], ema20=Decimal(120), ema60=Decimal(100))
         expected = "BULL_TREND"
     else:
-        feats15[-1] = replace(feats15[-1], ema20=Decimal(80), ema60=Decimal(100),
-                              adx14=Decimal(28))
+        feats15[-1] = replace(feats15[-1], ema20=Decimal(80), ema60=Decimal(100), adx14=Decimal(28))
         feats15[-4] = replace(feats15[-4], ema20=Decimal(81))
         feats1h[-1] = replace(feats1h[-1], ema20=Decimal(80), ema60=Decimal(100))
         expected = "BEAR_TREND"
@@ -87,13 +99,25 @@ def test_compression_breakout_has_priority_over_trend() -> None:
     candles, feats15, feats1h = fixtures()
     last = candles[-1]
     candles[-1] = FinalCandle(
-        last.symbol, last.timeframe, last.open_ms, last.close_ms,
-        Decimal(100), Decimal(123), Decimal(99), Decimal(121),
-        Decimal(2), Decimal(200), 12, "REST",
+        last.symbol,
+        last.timeframe,
+        last.open_ms,
+        last.close_ms,
+        Decimal(100),
+        Decimal(123),
+        Decimal(99),
+        Decimal(121),
+        Decimal(2),
+        Decimal(200),
+        12,
+        "REST",
     )
     feats15[-1] = replace(
-        feats15[-1], volume_ratio20=Decimal("2"), adx14=Decimal(30),
-        ema20=Decimal(120), ema60=Decimal(100),
+        feats15[-1],
+        volume_ratio20=Decimal("2"),
+        adx14=Decimal(30),
+        ema20=Decimal(120),
+        ema60=Decimal(100),
     )
     feats15[-2] = replace(feats15[-2], bb_width_percentile_30d=Decimal(".1"))
     feats15[-4] = replace(feats15[-4], ema20=Decimal(119))
@@ -106,7 +130,8 @@ def test_compression_breakout_has_priority_over_trend() -> None:
 def test_high_risk_preempts_breakout_and_cooldown() -> None:
     candles, feats15, higher = fixtures()
     feats15[-1] = replace(
-        feats15[-1], realized_vol20=Decimal(".04"),
+        feats15[-1],
+        realized_vol20=Decimal(".04"),
         realized_vol_percentile_30d=Decimal(".95"),
     )
     result = classify_candidate(candles, feats15, higher)
@@ -119,10 +144,16 @@ def test_spread_unavailable_is_not_fabricated() -> None:
     assert classify_candidate(bars, feats, higher).metrics["spread_bps"] is None
     with pytest.raises(RegimeUnavailable, match="INCOMPLETE_SPREAD_FEED"):
         classify_candidate(bars, feats, higher, spread_bps=Decimal(8))
-    assert classify_candidate(
-        bars, feats, higher, spread_bps=Decimal(8),
-        median_spread_bps=Decimal(2),
-    ).regime == "HIGH_RISK"
+    assert (
+        classify_candidate(
+            bars,
+            feats,
+            higher,
+            spread_bps=Decimal(8),
+            median_spread_bps=Decimal(2),
+        ).regime
+        == "HIGH_RISK"
+    )
 
 
 def test_no_valid_state_is_transition() -> None:
@@ -145,8 +176,6 @@ def test_missing_30d_reference_or_wrong_higher_clock_fails_closed() -> None:
 def test_range_fails_without_both_edges_tested() -> None:
     bars, feats, higher = fixtures()
     # Wide 15m bar has bound; after-touch bounce is absent if all candles close low.
-    altered = [
-        replace(bar_, close=Decimal(99)) for bar_ in bars
-    ]
+    altered = [replace(bar_, close=Decimal(99)) for bar_ in bars]
     candidate = classify_candidate(altered, feats, higher)
     assert candidate.regime == "TRANSITION"

@@ -82,7 +82,8 @@ def advance(state: GateState, candidate: str, closed_5m_ms: int) -> GateResult:
     if candidate == "HIGH_RISK":
         switched = state.current != "HIGH_RISK"
         next_state = GateState(
-            current="HIGH_RISK", confirmations=0,
+            current="HIGH_RISK",
+            confirmations=0,
             last_switch_ms=closed_5m_ms if switched else state.last_switch_ms,
             last_processed_ms=closed_5m_ms,
         )
@@ -91,23 +92,27 @@ def advance(state: GateState, candidate: str, closed_5m_ms: int) -> GateResult:
     if candidate == state.current:
         return GateResult(
             GateState(state.current, None, 0, state.last_switch_ms, closed_5m_ms),
-            tuple(reasons + ["STATE_STABLE"]), False,
+            tuple(reasons + ["STATE_STABLE"]),
+            False,
         )
 
     count = state.confirmations + 1 if state.pending == candidate else 1
-    cooled = (
-        state.last_switch_ms is None
-        or closed_5m_ms - state.last_switch_ms >= COOLDOWN_MS
-    )
+    cooled = state.last_switch_ms is None or closed_5m_ms - state.last_switch_ms >= COOLDOWN_MS
     if count >= CONFIRMATION_BARS and cooled:
         return GateResult(
             GateState(candidate, None, 0, closed_5m_ms, closed_5m_ms),
-            tuple(reasons + ["STATE_SWITCH_CONFIRMED"]), True,
+            tuple(reasons + ["STATE_SWITCH_CONFIRMED"]),
+            True,
         )
 
     return GateResult(
-        GateState(state.current, candidate, min(count, CONFIRMATION_BARS),
-                  state.last_switch_ms, closed_5m_ms),
+        GateState(
+            state.current,
+            candidate,
+            min(count, CONFIRMATION_BARS),
+            state.last_switch_ms,
+            closed_5m_ms,
+        ),
         tuple(reasons + (["COOLDOWN_ACTIVE"] if not cooled else ["PENDING_5M_CONFIRMATION"])),
         False,
     )

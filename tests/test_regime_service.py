@@ -27,10 +27,15 @@ def _bars(symbol: str, timeframe: str, start_ms: int, step: int, count: int) -> 
             "timeframe": timeframe,
             "open_time": datetime.fromtimestamp((start_ms + i * step) / 1000, tz=UTC),
             "close_time": datetime.fromtimestamp((start_ms + (i + 1) * step) / 1000, tz=UTC),
-            "open": Decimal(100), "high": Decimal(101), "low": Decimal(99),
-            "close": Decimal(100), "volume": Decimal(1),
-            "quote_volume": Decimal(100), "trade_count": 10,
-            "is_final": True, "source": "REST",
+            "open": Decimal(100),
+            "high": Decimal(101),
+            "low": Decimal(99),
+            "close": Decimal(100),
+            "volume": Decimal(1),
+            "quote_volume": Decimal(100),
+            "trade_count": 10,
+            "is_final": True,
+            "source": "REST",
         }
         for i in range(count)
     ]
@@ -61,11 +66,17 @@ def test_end_to_end_range_switch_requires_three_5m_closes(full_history: Engine) 
     outputs = []
     for i in range(3):
         close_ms = ANCHOR_MS + i * FIVE_MIN
-        outputs.append(service.observe(
-            "BTCUSDT", close_ms=close_ms, clock_ms=close_ms + 1000,
-        ))
+        outputs.append(
+            service.observe(
+                "BTCUSDT",
+                close_ms=close_ms,
+                clock_ms=close_ms + 1000,
+            )
+        )
     assert [str(out["regime"]) for out in outputs] == [
-        "TRANSITION", "TRANSITION", "RANGE",
+        "TRANSITION",
+        "TRANSITION",
+        "RANGE",
     ]
     assert all(out["status"] == "READY" for out in outputs)
     assert all(out["features"]["candidate"] == "RANGE" for out in outputs)
@@ -75,7 +86,8 @@ def test_end_to_end_range_switch_requires_three_5m_closes(full_history: Engine) 
 
     # Same as-of observation cannot create a second snapshot or double advance.
     again = service.observe(
-        "BTCUSDT", close_ms=ANCHOR_MS + 2 * FIVE_MIN,
+        "BTCUSDT",
+        close_ms=ANCHOR_MS + 2 * FIVE_MIN,
         clock_ms=ANCHOR_MS + 2 * FIVE_MIN + 1500,
     )
     assert again["regime"] == "RANGE"
@@ -86,7 +98,8 @@ def test_end_to_end_range_switch_requires_three_5m_closes(full_history: Engine) 
 def test_older_replay_after_newer_snapshot_rejected(full_history: Engine) -> None:
     service = RegimeResearchService(full_history)
     service.observe(
-        "BTCUSDT", close_ms=ANCHOR_MS + FIVE_MIN,
+        "BTCUSDT",
+        close_ms=ANCHOR_MS + FIVE_MIN,
         clock_ms=ANCHOR_MS + FIVE_MIN + 1,
     )
     with pytest.raises(RegimeUnavailable, match="OUT_OF_ORDER"):
@@ -96,29 +109,30 @@ def test_older_replay_after_newer_snapshot_rejected(full_history: Engine) -> Non
 def test_injected_future_15m_candle_never_enters_past_asof(full_history: Engine) -> None:
     future_end = ANCHOR_MS + FIFTEEN_MIN
     with full_history.begin() as connection:
-        connection.execute(insert(Candle), _bars(
-            "BTCUSDT", "15m", ANCHOR_MS, FIFTEEN_MIN, 1
-        ))
+        connection.execute(insert(Candle), _bars("BTCUSDT", "15m", ANCHOR_MS, FIFTEEN_MIN, 1))
     service = RegimeResearchService(full_history)
     with Session(full_history) as session:
         loaded = service._load(session, "BTCUSDT", "15m", ANCHOR_MS, 2920)
     assert loaded[-1].close_ms == ANCHOR_MS
     assert loaded[-1].close_ms < future_end
-    assert service.observe(
-        "BTCUSDT", close_ms=ANCHOR_MS, clock_ms=ANCHOR_MS + 1
-    )["features"]["source_15m_close_ms"] == ANCHOR_MS
+    assert (
+        service.observe("BTCUSDT", close_ms=ANCHOR_MS, clock_ms=ANCHOR_MS + 1)["features"][
+            "source_15m_close_ms"
+        ]
+        == ANCHOR_MS
+    )
 
 
 def test_missing_historical_candle_fails_closed(full_history: Engine) -> None:
     from sqlalchemy import delete
+
     with full_history.begin() as connection:
         connection.execute(
             delete(Candle).where(
                 Candle.symbol == "BTCUSDT",
                 Candle.timeframe == "15m",
-                Candle.open_time == datetime.fromtimestamp(
-                    (ANCHOR_MS - 100 * FIFTEEN_MIN) / 1000, tz=UTC
-                ),
+                Candle.open_time
+                == datetime.fromtimestamp((ANCHOR_MS - 100 * FIFTEEN_MIN) / 1000, tz=UTC),
             )
         )
     with pytest.raises(RegimeUnavailable, match="15M_HISTORY"):

@@ -150,9 +150,7 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
         service = RegimeResearchService(_engine(request))
         return {
             "observed_at": datetime.now(UTC).isoformat(),
-            "symbols": {
-                symbol: service.latest(symbol, clock_ms=clock_ms) for symbol in SYMBOLS
-            },
+            "symbols": {symbol: service.latest(symbol, clock_ms=clock_ms) for symbol in SYMBOLS},
             "execution_enabled": False,
         }
 

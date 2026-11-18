@@ -29,8 +29,10 @@ def test_high_risk_is_immediate_and_clears_pending() -> None:
 
 def test_cooldown_blocks_switch_even_with_three_confirmations() -> None:
     initial = GateState(
-        current="BULL_TREND", pending="BEAR_TREND",
-        confirmations=2, last_switch_ms=2 * FIVE_MIN_MS,
+        current="BULL_TREND",
+        pending="BEAR_TREND",
+        confirmations=2,
+        last_switch_ms=2 * FIVE_MIN_MS,
         last_processed_ms=2 * FIVE_MIN_MS,
     )
     blocked = advance(initial, "BEAR_TREND", 3 * FIVE_MIN_MS)
@@ -43,8 +45,10 @@ def test_cooldown_blocks_switch_even_with_three_confirmations() -> None:
 
 def test_processing_gap_resets_stale_state_and_pending() -> None:
     initial = GateState(
-        current="BULL_TREND", pending="RANGE",
-        confirmations=2, last_switch_ms=FIVE_MIN_MS,
+        current="BULL_TREND",
+        pending="RANGE",
+        confirmations=2,
+        last_switch_ms=FIVE_MIN_MS,
         last_processed_ms=2 * FIVE_MIN_MS,
     )
     result = advance(initial, "RANGE", 5 * FIVE_MIN_MS)

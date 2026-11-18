@@ -57,7 +57,12 @@ class RegimeResearchService:
         self.store = CandleStore(engine)
 
     def _load(
-        self, session: Session, symbol: str, timeframe: str, end_ms: int, count: int,
+        self,
+        session: Session,
+        symbol: str,
+        timeframe: str,
+        end_ms: int,
+        count: int,
     ) -> list[FinalCandle]:
         cutoff = datetime.fromtimestamp(end_ms / 1000, tz=UTC)
         items = session.scalars(
@@ -77,8 +82,7 @@ class RegimeResearchService:
         step = INTERVAL_MS[timeframe]
         expected = end_ms - count * step
         if any(
-            bar.open_ms != expected + i * step
-            or bar.close_ms != expected + (i + 1) * step
+            bar.open_ms != expected + i * step or bar.close_ms != expected + (i + 1) * step
             for i, bar in enumerate(result)
         ):
             raise RegimeUnavailable(f"{timeframe.upper()}_GAP_OR_UNFINALIZED")
@@ -105,8 +109,11 @@ class RegimeResearchService:
         if symbol not in SYMBOLS:
             raise ValueError("Unsupported research symbol")
         if (
-            type(close_ms) is not int or close_ms < 0 or close_ms % FIVE_MIN_MS
-            or type(clock_ms) is not int or not close_ms <= clock_ms < close_ms + 2 * FIVE_MIN_MS
+            type(close_ms) is not int
+            or close_ms < 0
+            or close_ms % FIVE_MIN_MS
+            or type(clock_ms) is not int
+            or not close_ms <= clock_ms < close_ms + 2 * FIVE_MIN_MS
         ):
             raise RegimeUnavailable("STALE_OR_FUTURE_5M_CLOSE")
 
@@ -116,13 +123,14 @@ class RegimeResearchService:
         }
         for timeframe, count in REQUIRED.items():
             readiness = self.store.history_readiness(
-                symbol, timeframe, ends[timeframe],
-                required_bars=count, require_latest=False,
+                symbol,
+                timeframe,
+                ends[timeframe],
+                required_bars=count,
+                require_latest=False,
             )
             if readiness["status"] != "READY":
-                raise RegimeUnavailable(
-                    f"{timeframe.upper()}_HISTORY_{readiness['status']}"
-                )
+                raise RegimeUnavailable(f"{timeframe.upper()}_HISTORY_{readiness['status']}")
 
         with Session(self.engine) as session:
             previous = self._last_snapshot(session, symbol)
@@ -149,9 +157,7 @@ class RegimeResearchService:
                 except ValueError as exc:
                     raise RegimeUnavailable("CORRUPT_PERSISTED_GATE_STATE") from exc
             if gate_state.last_processed_ms is not None and previous is not None:
-                if gate_state.last_processed_ms != _as_milliseconds(
-                    previous.candle_close_time
-                ):
+                if gate_state.last_processed_ms != _as_milliseconds(previous.candle_close_time):
                     raise RegimeUnavailable("GATE_TIMESTAMP_MISMATCH")
 
             transition = advance(gate_state, candidate.regime, close_ms)
@@ -220,7 +226,11 @@ class RegimeResearchService:
             for timeframe, count in REQUIRED.items():
                 end = clock_ms // INTERVAL_MS[timeframe] * INTERVAL_MS[timeframe]
                 readiness = self.store.history_readiness(
-                    symbol, timeframe, end, required_bars=count, require_latest=True,
+                    symbol,
+                    timeframe,
+                    end,
+                    required_bars=count,
+                    require_latest=True,
                 )
                 if readiness["status"] != "READY":
                     return {
