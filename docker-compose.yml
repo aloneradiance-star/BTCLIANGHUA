@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: baqs
+      POSTGRES_USER: baqs
+      POSTGRES_PASSWORD: baqs_dev_only
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - baqs_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U baqs -d baqs"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  api:
+    build: .
+    environment:
+      BAQS_ENVIRONMENT: PAPER
+      BAQS_LIVE_ENABLED: "false"
+      BAQS_DATABASE_URL: postgresql+psycopg://baqs:baqs_dev_only@db:5432/baqs
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        alembic upgrade head
+        exec uvicorn baqs.api:app --host 0.0.0.0 --port 8000
+
+volumes:
+  baqs_postgres:
