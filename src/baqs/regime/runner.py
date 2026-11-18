@@ -10,7 +10,8 @@ from baqs.db import make_engine
 from baqs.logging_config import configure_logging
 from baqs.market_data.schema import SYMBOLS
 from baqs.regime.rules import RegimeUnavailable
-from baqs.regime.service import FIVE_MIN_MS, RegimeResearchService
+from baqs.regime.gate import FIVE_MIN_MS
+from baqs.regime.service import RegimeResearchService
 from baqs.settings import get_settings
 
 logger = logging.getLogger(__name__)
