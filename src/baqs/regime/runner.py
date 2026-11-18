@@ -9,8 +9,8 @@ from datetime import UTC, datetime
 from baqs.db import make_engine
 from baqs.logging_config import configure_logging
 from baqs.market_data.schema import SYMBOLS
-from baqs.regime.rules import RegimeUnavailable
 from baqs.regime.gate import FIVE_MIN_MS
+from baqs.regime.rules import RegimeUnavailable
 from baqs.regime.service import RegimeResearchService
 from baqs.settings import get_settings
 
