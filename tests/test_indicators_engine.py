@@ -14,13 +14,22 @@ def series(n: int, *, step: int = STEP, timeframe: str = "15m") -> list[FinalCan
     out = []
     for i in range(n):
         price = Decimal(1000 + ((i * 7) % 53)) + Decimal(i) / Decimal(100)
-        out.append(FinalCandle(
-            symbol="BTCUSDT", timeframe=timeframe,
-            open_ms=i * step, close_ms=(i + 1) * step,
-            open=price, high=price + 2, low=price - 2,
-            close=price, volume=Decimal(1 + (i % 13)),
-            quote_volume=Decimal(1000), trade_count=10, source="REST",
-        ))
+        out.append(
+            FinalCandle(
+                symbol="BTCUSDT",
+                timeframe=timeframe,
+                open_ms=i * step,
+                close_ms=(i + 1) * step,
+                open=price,
+                high=price + 2,
+                low=price - 2,
+                close=price,
+                volume=Decimal(1 + (i % 13)),
+                quote_volume=Decimal(1000),
+                trade_count=10,
+                source="REST",
+            )
+        )
     return out
 
 
@@ -57,7 +66,7 @@ def test_15m_30day_percentiles_wait_for_full_past_window() -> None:
     assert features[2899].realized_vol_percentile_30d is None
     assert features[2900].realized_vol_percentile_30d is not None
     i = 2902
-    previous = [row.bb_width20 for row in features[i - 2880:i]]
+    previous = [row.bb_width20 for row in features[i - 2880 : i]]
     current = features[i].bb_width20
     assert current is not None
     expected = Decimal(sum(v is not None and v <= current for v in previous)) / 2880
@@ -83,9 +92,18 @@ def test_out_of_order_or_cross_symbol_series_fails() -> None:
     with pytest.raises(ValueError):
         compute_features([bars[1], bars[0]])
     eth = FinalCandle(
-        "ETHUSDT", "15m", bars[1].open_ms, bars[1].close_ms,
-        bars[1].open, bars[1].high, bars[1].low, bars[1].close,
-        bars[1].volume, bars[1].quote_volume, 10, "REST",
+        "ETHUSDT",
+        "15m",
+        bars[1].open_ms,
+        bars[1].close_ms,
+        bars[1].open,
+        bars[1].high,
+        bars[1].low,
+        bars[1].close,
+        bars[1].volume,
+        bars[1].quote_volume,
+        10,
+        "REST",
     )
     with pytest.raises(ValueError, match="Cannot combine"):
         compute_features([bars[0], eth])

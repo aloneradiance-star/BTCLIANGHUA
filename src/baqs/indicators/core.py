@@ -48,14 +48,8 @@ def wilder_rsi(prices: Sequence[Decimal], period: int = 14) -> list[Decimal | No
     result: list[Decimal | None] = [None] * len(prices)
     if len(prices) <= period:
         return result
-    gains = [
-        max(prices[i] - prices[i - 1], ZERO)
-        for i in range(1, period + 1)
-    ]
-    losses = [
-        max(prices[i - 1] - prices[i], ZERO)
-        for i in range(1, period + 1)
-    ]
+    gains = [max(prices[i] - prices[i - 1], ZERO) for i in range(1, period + 1)]
+    losses = [max(prices[i - 1] - prices[i], ZERO) for i in range(1, period + 1)]
     p = Decimal(period)
     average_up = sum(gains, ZERO) / p
     average_down = sum(losses, ZERO) / p
@@ -71,7 +65,8 @@ def wilder_rsi(prices: Sequence[Decimal], period: int = 14) -> list[Decimal | No
 
 
 def wilder_atr_adx(
-    bars: Sequence[FinalCandle], period: int = 14,
+    bars: Sequence[FinalCandle],
+    period: int = 14,
 ) -> tuple[
     list[Decimal | None],
     list[Decimal | None],
@@ -109,9 +104,9 @@ def wilder_atr_adx(
         negative_dm[i] = downward if downward > upward and downward > 0 else ZERO
 
     p = Decimal(period)
-    tr_sum = sum(true_ranges[1:period + 1], ZERO)
-    plus_sum = sum(positive_dm[1:period + 1], ZERO)
-    minus_sum = sum(negative_dm[1:period + 1], ZERO)
+    tr_sum = sum(true_ranges[1 : period + 1], ZERO)
+    plus_sum = sum(positive_dm[1 : period + 1], ZERO)
+    minus_sum = sum(negative_dm[1 : period + 1], ZERO)
     dx_values: list[Decimal] = []
 
     for i in range(period, n):
@@ -127,10 +122,7 @@ def wilder_atr_adx(
             minus = ONE_HUNDRED * minus_sum / tr_sum
         plus_di[i], minus_di[i] = plus, minus
         total_di = plus + minus
-        dx = (
-            ONE_HUNDRED * abs(plus - minus) / total_di
-            if total_di != 0 else ZERO
-        )
+        dx = ONE_HUNDRED * abs(plus - minus) / total_di if total_di != 0 else ZERO
         dx_values.append(dx)
         if len(dx_values) == period:
             adx[i] = sum(dx_values, ZERO) / p
@@ -143,7 +135,9 @@ def wilder_atr_adx(
 
 
 def bollinger(
-    prices: Sequence[Decimal], period: int = 20, deviations: int = 2,
+    prices: Sequence[Decimal],
+    period: int = 20,
+    deviations: int = 2,
 ) -> tuple[
     list[Decimal | None],
     list[Decimal | None],
@@ -161,7 +155,7 @@ def bollinger(
     p = Decimal(period)
     mult = Decimal(deviations)
     for i in range(period - 1, n):
-        subset = prices[i - period + 1:i + 1]
+        subset = prices[i - period + 1 : i + 1]
         with localcontext() as context:
             context.prec = 40
             average = sum(subset, ZERO) / p
@@ -192,18 +186,20 @@ def utc_session_vwap(bars: Sequence[FinalCandle]) -> list[Decimal | None]:
 
 
 def past_volume_ratio(
-    bars: Sequence[FinalCandle], period: int = 20,
+    bars: Sequence[FinalCandle],
+    period: int = 20,
 ) -> list[Decimal | None]:
     """Current closed-bar base volume over median of preceding period bars only."""
     if period < 1:
         raise ValueError("Volume median window must be positive")
     output: list[Decimal | None] = [None] * len(bars)
     for i in range(period, len(bars)):
-        previous_volumes = sorted(bar.volume for bar in bars[i - period:i])
+        previous_volumes = sorted(bar.volume for bar in bars[i - period : i])
         mid = period // 2
         historical_median = (
             previous_volumes[mid]
-            if period % 2 else (previous_volumes[mid - 1] + previous_volumes[mid]) / 2
+            if period % 2
+            else (previous_volumes[mid - 1] + previous_volumes[mid]) / 2
         )
         if historical_median > 0:
             output[i] = bars[i].volume / historical_median
@@ -211,7 +207,8 @@ def past_volume_ratio(
 
 
 def realized_volatility(
-    closes: Sequence[Decimal], period: int = 20,
+    closes: Sequence[Decimal],
+    period: int = 20,
 ) -> list[Decimal | None]:
     """Population stdev of preceding-inclusive 'period' log returns; not annualized."""
     if period < 2:
@@ -221,13 +218,10 @@ def realized_volatility(
         return result
     with localcontext() as context:
         context.prec = 40
-        log_returns = [
-            (closes[i] / closes[i - 1]).ln()
-            for i in range(1, len(closes))
-        ]
+        log_returns = [(closes[i] / closes[i - 1]).ln() for i in range(1, len(closes))]
         p = Decimal(period)
         for i in range(period, len(closes)):
-            window = log_returns[i - period:i]
+            window = log_returns[i - period : i]
             average = sum(window, ZERO) / p
             variance = sum(((value - average) ** 2 for value in window), ZERO) / p
             result[i] = variance.sqrt()
@@ -235,7 +229,8 @@ def realized_volatility(
 
 
 def trailing_percentile(
-    values: Sequence[Decimal | None], lookback: int,
+    values: Sequence[Decimal | None],
+    lookback: int,
 ) -> list[Decimal | None]:
     """Inclusive rank of current value against EXACTLY lookback past valid values.
 
@@ -247,7 +242,7 @@ def trailing_percentile(
     result: list[Decimal | None] = [None] * len(values)
     for i in range(lookback, len(values)):
         current = values[i]
-        previous = values[i - lookback:i]
+        previous = values[i - lookback : i]
         if current is None or any(x is None for x in previous):
             continue
         assert all(x is not None for x in previous)

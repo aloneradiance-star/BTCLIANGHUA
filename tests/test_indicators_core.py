@@ -26,12 +26,18 @@ def linear_bars(n: int, *, timeframe: str = "15m") -> list[FinalCandle]:
     step = 900_000 if timeframe == "15m" else 60_000
     return [
         FinalCandle(
-            symbol="BTCUSDT", timeframe=timeframe,
-            open_ms=i * step, close_ms=(i + 1) * step,
-            open=Decimal(100 + i), high=Decimal(101 + i),
-            low=Decimal(99 + i), close=Decimal(100 + i),
-            volume=Decimal(i + 1), quote_volume=Decimal(1000),
-            trade_count=10, source="REST",
+            symbol="BTCUSDT",
+            timeframe=timeframe,
+            open_ms=i * step,
+            close_ms=(i + 1) * step,
+            open=Decimal(100 + i),
+            high=Decimal(101 + i),
+            low=Decimal(99 + i),
+            close=Decimal(100 + i),
+            volume=Decimal(i + 1),
+            quote_volume=Decimal(1000),
+            trade_count=10,
+            source="REST",
         )
         for i in range(n)
     ]
@@ -74,9 +80,18 @@ def test_wilder_atr_adx_linear_uptrend_known_values() -> None:
 def test_atr_adx_constant_price_no_division_by_zero() -> None:
     bars = [
         FinalCandle(
-            "BTCUSDT", "1m", i * 60_000, (i + 1) * 60_000,
-            Decimal(100), Decimal(100), Decimal(100), Decimal(100),
-            Decimal(1), Decimal(100), 1, "REST",
+            "BTCUSDT",
+            "1m",
+            i * 60_000,
+            (i + 1) * 60_000,
+            Decimal(100),
+            Decimal(100),
+            Decimal(100),
+            Decimal(100),
+            Decimal(1),
+            Decimal(100),
+            1,
+            "REST",
         )
         for i in range(40)
     ]
@@ -106,10 +121,18 @@ def test_utc_session_vwap_resets_at_midnight() -> None:
     start_ms = int(datetime(2026, 11, 17, 23, 55, tzinfo=UTC).timestamp() * 1000)
     bars = [
         FinalCandle(
-            "BTCUSDT", "5m", start_ms + i * 300_000, start_ms + (i + 1) * 300_000,
-            Decimal(100 * (i + 1)), Decimal(100 * (i + 1)),
-            Decimal(100 * (i + 1)), Decimal(100 * (i + 1)),
-            Decimal(1), Decimal(100), 1, "REST",
+            "BTCUSDT",
+            "5m",
+            start_ms + i * 300_000,
+            start_ms + (i + 1) * 300_000,
+            Decimal(100 * (i + 1)),
+            Decimal(100 * (i + 1)),
+            Decimal(100 * (i + 1)),
+            Decimal(100 * (i + 1)),
+            Decimal(1),
+            Decimal(100),
+            1,
+            "REST",
         )
         for i in range(2)
     ]
@@ -120,9 +143,18 @@ def test_vwap_zero_volume_yields_none_until_volume_appears() -> None:
     bars = linear_bars(3)
     zero_bars = [
         FinalCandle(
-            bar.symbol, bar.timeframe, bar.open_ms, bar.close_ms,
-            bar.open, bar.high, bar.low, bar.close,
-            Decimal(0), Decimal(0), 0, "REST",
+            bar.symbol,
+            bar.timeframe,
+            bar.open_ms,
+            bar.close_ms,
+            bar.open,
+            bar.high,
+            bar.low,
+            bar.close,
+            Decimal(0),
+            Decimal(0),
+            0,
+            "REST",
         )
         for bar in bars
     ]
@@ -133,9 +165,18 @@ def test_volume_ratio_excludes_current_candle() -> None:
     bars = linear_bars(21)
     current = bars[20]
     bars[20] = FinalCandle(
-        current.symbol, current.timeframe, current.open_ms, current.close_ms,
-        current.open, current.high, current.low, current.close,
-        Decimal(42), Decimal(5000), current.trade_count, "REST",
+        current.symbol,
+        current.timeframe,
+        current.open_ms,
+        current.close_ms,
+        current.open,
+        current.high,
+        current.low,
+        current.close,
+        Decimal(42),
+        Decimal(5000),
+        current.trade_count,
+        "REST",
     )
     ratios = past_volume_ratio(bars)
     assert ratios[:20] == [None] * 20
@@ -144,7 +185,12 @@ def test_volume_ratio_excludes_current_candle() -> None:
 
 def test_trailing_percentile_uses_past_only_and_requires_full_history() -> None:
     values: list[Decimal | None] = [
-        None, Decimal(1), Decimal(2), Decimal(0), Decimal(3), Decimal(1),
+        None,
+        Decimal(1),
+        Decimal(2),
+        Decimal(0),
+        Decimal(3),
+        Decimal(1),
     ]
     scores = trailing_percentile(values, 2)
     assert scores[2] is None  # first window contains the missing seed
@@ -161,15 +207,18 @@ def test_realized_volatility_flat_and_geometric_constant_returns() -> None:
     assert realized_volatility(geometric)[20] == Decimal(0)
 
 
-@pytest.mark.parametrize("operation", [
-    lambda: ema([Decimal(1)], 0),
-    lambda: wilder_rsi([Decimal(1)], 0),
-    lambda: wilder_atr_adx([], 0),
-    lambda: bollinger([Decimal(1)], 1),
-    lambda: past_volume_ratio([], 0),
-    lambda: trailing_percentile([], 0),
-    lambda: realized_volatility([Decimal(1)], 1),
-])
+@pytest.mark.parametrize(
+    "operation",
+    [
+        lambda: ema([Decimal(1)], 0),
+        lambda: wilder_rsi([Decimal(1)], 0),
+        lambda: wilder_atr_adx([], 0),
+        lambda: bollinger([Decimal(1)], 1),
+        lambda: past_volume_ratio([], 0),
+        lambda: trailing_percentile([], 0),
+        lambda: realized_volatility([Decimal(1)], 1),
+    ],
+)
 def test_invalid_window_parameters_fail(operation: object) -> None:
     with pytest.raises(ValueError):
         operation()  # type: ignore[operator]
