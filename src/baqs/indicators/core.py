@@ -6,9 +6,9 @@ is (2 * period - 1). EMA is SMA seeded at period - 1. Standard deviation is
 population (ddof=0). All calculations preserve Decimal inputs and outputs.
 """
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal, localcontext
-from typing import Sequence
 
 from baqs.market_data.schema import FinalCandle
 
