@@ -107,7 +107,9 @@ class PublicHistoryBackfill:
                     or candle.open_ms != chunk_start + index * step
                     or candle.close_ms != chunk_start + (index + 1) * step
                 ):
-                    raise CandleGap("REST history returned mismatched, out-of-order or incomplete bars")
+                    raise CandleGap(
+                        "REST history returned mismatched, out-of-order or incomplete bars"
+                    )
             fetched += len(segment)
             for candle in segment:
                 outcome = self.store.upsert(candle)
