@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Sequence
+from typing import cast
 
 import httpx
 
@@ -47,7 +48,7 @@ class PublicFuturesREST:
         value = await self._request("/fapi/v1/time")
         if not isinstance(value, dict) or type(value.get("serverTime")) is not int:
             raise InvalidCandle("Public server time response is invalid")
-        return value["serverTime"]
+        return cast(int, value["serverTime"])
 
     async def fetch_range(
         self,
