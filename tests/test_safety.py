@@ -1,9 +1,9 @@
 """Verify the foundational app cannot perform private account or live trading calls."""
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-import pytest
 
 from baqs.api import create_app
 from baqs.settings import Settings
