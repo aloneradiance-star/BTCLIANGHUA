@@ -62,7 +62,9 @@ async def run_collector() -> None:
                     ConnectionClosed, InvalidHandshake, OSError, TimeoutError,
                     MarketDataError, json.JSONDecodeError, httpx.HTTPError,
                 ) as exc:
-                    logger.warning("Public market stream unhealthy; reconnecting: %s", type(exc).__name__)
+                    logger.warning(
+                        "Public market stream unhealthy; reconnecting: %s", type(exc).__name__
+                    )
                     await asyncio.sleep(backoff)
                     backoff = min(30.0, backoff * 2)
     finally:
