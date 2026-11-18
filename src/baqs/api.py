@@ -1,6 +1,6 @@
 """Read-only public data API. Absolutely no trading endpoints in Phase 1."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import cast
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
@@ -113,7 +113,7 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
                         "features": item.features,
                         "reasons": item.reasons,
                     }
-        return {"observed_at": datetime.now().astimezone().isoformat(), "symbols": output}
+        return {"observed_at": datetime.now(UTC).isoformat(), "symbols": output}
 
     return app
 
