@@ -1,7 +1,6 @@
 """REST paging, incomplete-candle gating, throttling and hard gap failure."""
 
 import asyncio
-import json
 
 import httpx
 import pytest
