@@ -1,0 +1,1 @@
+"""Public Binance USD-M candle collection. No authenticated exchange API."""

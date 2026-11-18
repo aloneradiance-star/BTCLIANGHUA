@@ -1,0 +1,41 @@
+# P1-02 — Binance public USD-M market-data collector
+
+Research-only data ingestion. The only remote calls made by the collector:
+- REST GET `https://fapi.binance.com/fapi/v1/time`
+- REST GET `https://fapi.binance.com/fapi/v1/klines`
+- WSS `wss://fstream.binance.com/market/stream?streams=...`
+
+**No API keys, signed endpoints, order requests, user streams, positions, margin or account access.** No strategy in this phase places orders.
+
+## Data conventions
+- BTCUSDT and ETHUSDT; `1m`, `5m`, `15m`, `1h`.
+- UTC timestamps, aligned to candle opening times.
+- Binance documents REST/WS close timestamps as inclusive milliseconds (`T`), but local `close_time` stores the **exclusive interval boundary** (`T+1ms`).
+- REST may include an unfinished live candle. Accept only if `close_ms <= serverTime`.
+- WebSocket provisional messages with `k.x != true` are ignored.
+- Invalid OHLCV, unsupported symbol, invalid stream symbol or missing bars fail closed.
+- A finalized candle is immutable; conflicting duplicate REST/WS data raises `CandleConflict` and requires investigation. Do not silently rewrite historical facts.
+- All financial values are persisted as PostgreSQL `NUMERIC(28,12)` and parsed via Decimal.
+- Health reports `READY`, `NO_DATA`, `STALE` or `GAP`. Each report checks the most recent 240 finalized candles; more distant historical completeness is **not** guaranteed by that window alone.
+
+## Run
+```bash
+# First migrate the database:
+docker compose up -d db
+alembic upgrade head
+
+# Explicitly enable ONLY the public data collector:
+python -m baqs.market_data.runner
+```
+The research runner does not start automatically when the API service starts. Its runtime is restricted to `PAPER`. Run one collector instance per database; concurrent multi-process writes are not supported in Phase 1.
+
+A clean start fetches a bounded last-120-bar REST history for each feed after establishing the WebSocket. On reconnect, re-fetch overlapping finalized history and repair detected gaps. Bounded repair limits prevent unbounded burst traffic after prolonged outages. When the range exceeds the budget, ingestion stays unhealthy and requires controlled manual backfill.
+
+`GET /api/v1/market/health` exposes per-feed health read from database. `GET /api/v1/market/candles` returns finalized bars only. No price predictions or trades are returned.
+
+## API references (reviewed November 2026)
+- https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data
+- https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/ws-streams/market
+
+## Future engineering
+Add an advisory DB lock to prohibit multiple concurrent collectors, configurable bounded initial backfill, durable health event table, live stream outage soak tests and comprehensive historical reconciliation. Current API shows the most recent 240-bar quality window, not a historical certification.

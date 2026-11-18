@@ -21,8 +21,20 @@ uvicorn baqs.api:app --reload
 ```
 Open `http://127.0.0.1:8000/docs`. API endpoints are read-only:
 `GET /api/v1/health`, `GET /api/v1/market/candles`, and `GET /api/v1/market/regimes`.
-The database begins empty; **market ingestion is Issue #2**, and regimes are Issue #4.
+The database begins empty. Public market ingestion is implemented in Issue #2, and market classification remains Issue #4.
 On empty data, endpoints must report unavailable data, not fabricated signals.
+
+## Opt-in public Binance market collector
+After `alembic upgrade head`, in a separate process run:
+```bash
+python -m baqs.market_data.runner
+```
+Only public REST time/klines and public WebSocket `/market/stream` are used. This
+research collector is **not enabled automatically** by the API server. See
+`docs/P1-02_PUBLIC_DATA.md` for finalized-candle rules, gap repair and limitations.
+The additional read-only endpoint `GET /api/v1/market/health` reports data
+staleness and gaps. With no recent data, `GET /api/v1/health` returns HTTP 503;
+the database can be connected while the market feed remains unhealthy.
 
 ## Docker development
 ```bash
@@ -44,4 +56,4 @@ BAQS_DATABASE_URL=sqlite:////tmp/baqs-migration-smoke.db alembic upgrade head
 ```
 
 ## Engineering
-See `AGENTS.md`, `docs/PHASE1_CODEX_BRIEF.md` and Issue #1. Schema migrations live in `migrations/`. Later phases will add public REST/WebSocket ingestion, deterministic indicators and state classification. A real-money phase requires separate risk, compliance and user authorization gates.
+See `AGENTS.md`, `docs/PHASE1_CODEX_BRIEF.md` and Issue #1. Schema migrations live in `migrations/`. Later phases will add deterministic indicators and state classification. A real-money phase requires separate risk, compliance and user authorization gates.
