@@ -207,13 +207,16 @@ def test_partial_chunk_crash_resumes_without_duplicate_inserts(db_engine: Engine
         failing_store = FailingStore(db_engine)
         reader = StubReader()
         with pytest.raises(RuntimeError, match="halfway"):
-            await PublicHistoryBackfill(
-                reader, failing_store, chunk_bars=20, pause_seconds=0
-            ).run("BTCUSDT", "1h", bars=60)
+            await PublicHistoryBackfill(reader, failing_store, chunk_bars=20, pause_seconds=0).run(
+                "BTCUSDT", "1h", bars=60
+            )
         recovered_store = CandleStore(db_engine)
-        assert recovered_store.history_readiness(
-            "BTCUSDT", "1h", 40 * STEP, required_bars=20
-        )["status"] != "READY"
+        assert (
+            recovered_store.history_readiness("BTCUSDT", "1h", 40 * STEP, required_bars=20)[
+                "status"
+            ]
+            != "READY"
+        )
         recovered = await PublicHistoryBackfill(
             reader, recovered_store, chunk_bars=20, pause_seconds=0
         ).run("BTCUSDT", "1h", bars=60)
