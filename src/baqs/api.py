@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from baqs.db import make_engine
 from baqs.market_data.repository import CandleStore
 from baqs.market_data.schema import INTERVAL_MS
-from baqs.models import Candle, RegimeSnapshot
+from baqs.models import Candle
+from baqs.regime.service import RegimeResearchService
 from baqs.settings import Settings, get_settings
 
 SYMBOLS = ("BTCUSDT", "ETHUSDT")
@@ -144,27 +145,16 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
 
     @app.get("/api/v1/market/regimes")
     def regimes(request: Request) -> dict[str, object]:
-        output: dict[str, object] = {}
-        with Session(_engine(request)) as session:
-            for symbol in SYMBOLS:
-                item = session.scalar(
-                    select(RegimeSnapshot)
-                    .where(RegimeSnapshot.symbol == symbol)
-                    .order_by(RegimeSnapshot.candle_close_time.desc())
-                    .limit(1)
-                )
-                if item is None:
-                    output[symbol] = {"status": "UNAVAILABLE", "reason": "NO_CLASSIFICATION"}
-                else:
-                    output[symbol] = {
-                        "status": "HISTORICAL_SNAPSHOT",
-                        "regime": item.regime,
-                        "candle_close_time": item.candle_close_time.isoformat(),
-                        "classifier_version": item.classifier_version,
-                        "features": item.features,
-                        "reasons": item.reasons,
-                    }
-        return {"observed_at": datetime.now(UTC).isoformat(), "symbols": output}
+        """Read-only six-state research snapshots; stale/invalid feeds are UNAVAILABLE."""
+        clock_ms = int(datetime.now(UTC).timestamp() * 1000)
+        service = RegimeResearchService(_engine(request))
+        return {
+            "observed_at": datetime.now(UTC).isoformat(),
+            "symbols": {
+                symbol: service.latest(symbol, clock_ms=clock_ms) for symbol in SYMBOLS
+            },
+            "execution_enabled": False,
+        }
 
     return app
 
