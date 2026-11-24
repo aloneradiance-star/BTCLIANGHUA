@@ -91,6 +91,9 @@ candles/funding are never modified and reports are not persisted.
 - `READY` means every fold and cost scenario passed data-quality checks and
   each fold met the configured minimum trade count. It does not mean
   profitable, robust, deployable or independently validated.
+- The report explicitly sets `market_regime_coverage=NOT_EVALUATED` and
+  `robustness_assessment=NOT_MADE`. Regime-stratified coverage requires a
+  separate review; do not describe this output as robust.
 - `UNAVAILABLE` means at least one fold has incomplete or invalid inputs.
 - `INSUFFICIENT_SAMPLE` means one or more folds did not meet the minimum
   trade count. Do not describe such a result as robust.
