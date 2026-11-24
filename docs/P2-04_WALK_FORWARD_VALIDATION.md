@@ -20,8 +20,7 @@ The default behavior is unchanged: 1m defaults to 43,200 bars / 30 days,
 15m to 2,920 bars and 1h to 120 bars. Explicit ranges are bounded, chunked,
 restartable and idempotent. Finalized candle conflicts still fail closed.
 
-Example (use the same 90-day start/end for 1m and 15m; round 1h bounds down
-to exact hour boundaries):
+Choose 90-day HISTORY_START_MS / HISTORY_END_MS bounds aligned to 15m (and therefore also 1m). For 1h, round the start down to an hour and use floor(EVAL_END_MS / 3600000) * 3600000 as the exclusive end, so the 1h range remains within its 90-day cap while covering every fold context:
 
 ```bash
 python -m baqs.market_data.backfill --timeframe 1m --symbols BTCUSDT ETHUSDT --start-ms <HISTORY_START_MS> --end-ms <HISTORY_END_MS>
@@ -41,8 +40,7 @@ reproducible layout uses the first 2,920 15m bars only as warm-up, then a
 - `EVAL_END_MS = EVAL_START_MS + 5472 * 900000`
 - Each fold contains 1,824 15m bars / 27,360 1m execution bars.
 
-The remaining 2.58 days of the 90-day history window are a buffer, not an
-additional test fold. Each fold is half-open and starts exactly when the
+The evaluation duration plus the 2,920-bar warm-up must fit inside the 90-day history cap; the runner enforces this. The remaining 2.58 days of the 90-day history window are a buffer, not an additional test fold. Each fold is half-open and starts exactly when the
 previous fold ends. The runner rejects non-divisible or non-15m-aligned
 windows, and each fold remains below P2-03's 50,000 execution-minute cap.
 
@@ -58,7 +56,7 @@ python -m baqs.market_data.funding_backfill --start-ms <FOLD_2_START_MS> --end-m
 python -m baqs.market_data.funding_backfill --start-ms <FOLD_3_START_MS> --end-ms <FOLD_3_END_MS>
 ```
 
-Repeat those commands for BTCUSDT and ETHUSDT. Each fold must have an exact,
+The funding CLI defaults to both BTCUSDT and ETHUSDT; use `--symbols BTCUSDT` or `--symbols ETHUSDT` to run one asset only. Each fold must have an exact,
 complete, fingerprint-verified funding manifest. Missing or tampered
 coverage returns UNAVAILABLE.
 
