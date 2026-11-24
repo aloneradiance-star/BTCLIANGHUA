@@ -1,7 +1,7 @@
 """Phase-1 guard against private Binance USD-M and authenticated API usage."""
 
 import ast
-from pathlib import Path
+import pathlib
 import re
 
 import pytest
@@ -93,7 +93,7 @@ def test_routes_are_read_only() -> None:
 
 
 def test_no_exchange_secrets_or_execution_module() -> None:
-    root = Path(__file__).resolve().parents[1] / "src" / "baqs"
+    root = pathlib.Path(__file__).resolve().parents[1] / "src" / "baqs"
     assert not (root / "execution").exists()
     assert not (root / "exchange" / "binance_private.py").exists()
 
