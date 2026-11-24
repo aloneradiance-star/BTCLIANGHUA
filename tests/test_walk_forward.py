@@ -164,7 +164,7 @@ def test_walk_forward_cost_sensitivity_is_deterministic_and_read_only(
     assert len(first.cells) == 6
     assert first.aggregate_by_scenario["low"]["trade_counts_by_fold"] == [1, 1, 1]
     assert first.aggregate_by_scenario["stress"]["trade_counts_by_fold"] == [1, 1, 1]
-    assert first.aggregate_by_scenario["base"]["robustness_assessment"] == "NOT_MADE"
+    assert first.aggregate_by_scenario["low"]["robustness_assessment"] == "NOT_MADE"
     low_net = first.aggregate_by_scenario["low"]["net_pnl"]
     stress_net = first.aggregate_by_scenario["stress"]["net_pnl"]
     assert low_net > stress_net
