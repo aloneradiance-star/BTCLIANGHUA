@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from baqs.market_data.funding import FundingStore
-from baqs.market_data.schema import FundingGap, FundingRateRecord, SYMBOLS
+from baqs.market_data.schema import SYMBOLS, FundingGap, FundingRateRecord
 
 
 class PublicFundingReader(Protocol):
