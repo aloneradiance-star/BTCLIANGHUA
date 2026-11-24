@@ -209,6 +209,7 @@ def test_cost_and_risk_inputs_fail_closed() -> None:
     with pytest.raises(ValueError):
         FundingCoverage(START, START + 120_000, (START + 60_000, START + 60_000), True)
 
+
 def test_funding_manifest_must_match_exact_backtest_window() -> None:
     bars = [bar(0), bar(1), bar(2)]
     coverage = FundingCoverage(
