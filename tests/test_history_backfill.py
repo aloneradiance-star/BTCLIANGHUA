@@ -133,8 +133,8 @@ def test_conflicting_final_candle_is_never_silently_replaced(db_engine: Engine) 
 def test_strict_minimum_15m_reference_window(db_engine: Engine) -> None:
     async def run() -> None:
         history = PublicHistoryBackfill(StubReader(), CandleStore(db_engine))
-        with pytest.raises(ValueError, match="2901"):
-            await history.run("BTCUSDT", "15m", bars=2900)
+        with pytest.raises(ValueError, match="2920"):
+            await history.run("BTCUSDT", "15m", bars=2919)
         with pytest.raises(ValueError):
             await history.run("ETHUSDT", "1h", bars=5)
         with pytest.raises(ValueError):

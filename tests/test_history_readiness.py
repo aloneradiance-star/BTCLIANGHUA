@@ -104,6 +104,7 @@ def test_api_shows_readiness_not_fake_market_signals(db_engine: Engine) -> None:
     expected = response.json()["symbols"]["BTCUSDT"]["15m"]
     assert expected["status"] == "NO_DATA"
     assert expected["required_bars"] == 2920
+    assert response.json()["symbols"]["BTCUSDT"]["1h"]["required_bars"] == 60
     assert "orders" not in response.json()
 
 
@@ -150,3 +151,17 @@ def test_full_2920_bar_15m_percentile_reference_is_contiguous(db_engine: Engine)
     gap = store.history_readiness("BTCUSDT", "15m", end_ms, required_bars=n, require_latest=True)
     assert gap["status"] == "GAP"
     assert gap["first_missing_open_ms"] == first_ms + 100 * step
+
+
+def test_future_latest_bar_does_not_certify_older_window(db_engine: Engine) -> None:
+    store = CandleStore(db_engine)
+    for i in (1, 2, 3, 4):
+        store.upsert(closed(i))
+    report = store.history_readiness(
+        "BTCUSDT",
+        "1h",
+        4 * STEP,
+        required_bars=3,
+        require_latest=True,
+    )
+    assert report["status"] == "STALE"

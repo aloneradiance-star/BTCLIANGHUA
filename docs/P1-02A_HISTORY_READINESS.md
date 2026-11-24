@@ -7,8 +7,9 @@ requests, account access, leverage settings, or trading endpoints.
 The 15-minute 30-day empirical percentile has 2880 previous reference observations.
 With 20-bar Bollinger warm-up, the first 30-day BB-width percentile is at index
 2899. With 20 log-return realized volatility warm-up, the first realized-volatility
-30-day percentile is at index 2900 (0-based). The minimum complete sequence is
-**2901 consecutive finalized 15m candles**. For safety the default is 2920.
+30-day percentile is at index 2900 (0-based). The mathematical minimum complete sequence is **2901 consecutive finalized 15m candles**.
+Project acceptance sets a stricter **2,920-bar operational minimum** to provide a buffer.
+The 1h EMA60 warm-up accepts 60 bars; the default request is 120.
 
 The normal P1-02 public collector only replays roughly 120 bars at first startup.
 Therefore a feed being fresh does **not** imply sufficient 30-day feature coverage.
@@ -53,7 +54,7 @@ because some or most rows exist.
 
 ## Readiness
 `GET /api/v1/market/history-readiness` exposes per-symbol `15m` and
-`1h` health for a UTC observation time. A ready result requires exactly
+`1h` health for a UTC observation time (2,920 required 15m bars and 60 required 1h bars). A ready result requires exactly
 the requested trailing window of expected completed candles and no gaps
 within it. `READY`, `NO_DATA`, `INSUFFICIENT`, `GAP` or `STALE`
 must remain explicit; no market probabilities or trade signals.
@@ -64,7 +65,7 @@ order execution. Production deployment and concurrent-collector soak
 tests remain future milestones.
 
 ## Acceptance
-- 2901+ gapless closed 15m candles for each chosen symbol.
+- At least 2,920 gapless closed 15m candles for each chosen symbol (the mathematical RV-percentile minimum is 2,901).
 - Existing complete chunks are skipped; interrupted/partial chunks are repaired.
 - Missing exchange rows, out-of-order data, malformed candles and conflicting
   stored snapshots fail closed.

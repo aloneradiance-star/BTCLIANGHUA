@@ -13,7 +13,7 @@ from baqs.market_data.repository import CandleStore
 from baqs.market_data.schema import INTERVAL_MS, SYMBOLS, CandleGap, FinalCandle
 
 logger = logging.getLogger(__name__)
-MIN_15M_BARS = 2901  # First 30-day realized-vol percentile at index 2900.
+MIN_15M_BARS = 2920  # Issue #9 operational minimum; math requires 2901 for RV percentile.
 DEFAULT_BARS = {"15m": 2920, "1h": 120}
 MAX_BACKFILL_BARS = 5000
 

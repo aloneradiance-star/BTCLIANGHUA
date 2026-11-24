@@ -160,7 +160,7 @@ class CandleStore:
         last_available = self.latest_open_ms(symbol, timeframe)
         if last_available is None:
             status = "NO_DATA"
-        elif require_latest and last_available < anchored_end_ms - step:
+        elif require_latest and last_available != anchored_end_ms - step:
             status = "STALE"
         elif len(times) == required_bars and all(
             timestamp == start_ms + i * step for i, timestamp in enumerate(times)
