@@ -207,7 +207,7 @@ def test_cost_and_risk_inputs_fail_closed() -> None:
     with pytest.raises(ValueError):
         BacktestConfig(max_notional_fraction=Decimal("1.01"))
     with pytest.raises(ValueError):
-        FundingCoverage(START, START + 120_000, (START + 60_000, START + 60_000), True)
+        FundingCoverage(START, START + 120_000, (START + 120_000, START + 60_000), True)
 
 
 def test_funding_manifest_must_match_exact_backtest_window() -> None:
