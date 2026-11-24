@@ -6,6 +6,7 @@ Research infrastructure for public Binance USDⓈ-M futures market data. **Not a
 - Symbols: `BTCUSDT`, `ETHUSDT`.
 - Default mode: `PAPER`. A `BAQS_LIVE_ENABLED=true` value makes startup fail.
 - Read-only API; no exchange keys, no account access, no order placement.
+- The health endpoint returns `503 DEGRADED` when the required database schema cannot be read.
 - Rules and thresholds are research hypotheses, not validated profits.
 - Do not use this project to circumvent account eligibility or jurisdictional restrictions.
 
