@@ -72,7 +72,10 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
     def candles(
         request: Request,
         symbol: str = Query(default="BTCUSDT"),
-        timeframe: str = Query(default="5m"),
+        timeframe: str = Query(
+            default="5m",
+            description="Candle timeframe; defaults to 5m. Supported values: 1m, 5m, 15m, 1h.",
+        ),
         limit: int = Query(default=100, ge=1, le=500),
     ) -> dict[str, object]:
         if symbol not in SYMBOLS or timeframe not in TIMEFRAMES:

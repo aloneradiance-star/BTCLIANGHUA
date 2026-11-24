@@ -3,7 +3,7 @@
 The Phase 1 CI safety test scans executable Python syntax under src/baqs and
 rejects representative private Binance USD-M endpoints, user-data-stream
 references, API-key header literals, API-key/secret/signature identifiers,
-HMAC imports, and private-client imports.
+HMAC imports, and Binance SDK imports.
 
 The guard deliberately ignores comments and module/class/function docstrings.
 It includes positive tests for the public market-data routes used by this

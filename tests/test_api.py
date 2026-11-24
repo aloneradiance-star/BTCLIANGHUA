@@ -163,3 +163,10 @@ def test_no_write_or_trading_routes(db_engine: Engine) -> None:
         assert "order" not in path.lower()
         assert "account" not in path.lower()
         assert set(operations).issubset({"get"})
+
+def test_regime_timeframe_default_is_documented(db_engine: Engine) -> None:
+    schema = client_for(db_engine).get("/openapi.json").json()
+    parameters = schema["paths"]["/api/v1/market/regimes"]["get"]["parameters"]
+    timeframe = next(parameter for parameter in parameters if parameter["name"] == "timeframe")
+    assert timeframe["schema"]["default"] == "5m"
+    assert "Supported values: 1m, 5m, 15m, 1h" in timeframe["description"]

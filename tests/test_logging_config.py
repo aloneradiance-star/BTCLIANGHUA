@@ -6,13 +6,16 @@ import logging
 from fastapi.testclient import TestClient
 
 from baqs.api import create_app
-from baqs.logging_config import JsonStreamHandler, configure_logging
+from baqs.logging_config import JsonFormatter, JsonStreamHandler, configure_logging
 from baqs.settings import Settings
 
 
 def test_application_startup_emits_json_and_preserves_uvicorn(db_engine, capsys) -> None:
-    uvicorn_logger = logging.getLogger("uvicorn.error")
-    original_handlers = list(uvicorn_logger.handlers)
+    uvicorn_loggers = (
+        logging.getLogger("uvicorn.error"),
+        logging.getLogger("uvicorn.access"),
+    )
+    original_handlers = {logger.name: list(logger.handlers) for logger in uvicorn_loggers}
     app = create_app(
         settings=Settings(_env_file=None, database_url="sqlite:///:memory:"),
         engine=db_engine,
@@ -24,15 +27,22 @@ def test_application_startup_emits_json_and_preserves_uvicorn(db_engine, capsys)
     captured = capsys.readouterr()
     records = [json.loads(line) for line in captured.err.splitlines() if line.startswith("{")]
     startup = next(record for record in records if record["message"] == "application_started")
-    assert startup["timestamp"]
+    assert startup["timestamp"].endswith("+00:00")
     assert startup["level"] == "INFO"
     assert startup["logger"] == "baqs.api"
-    assert uvicorn_logger.handlers == original_handlers
+    assert logging.getLogger("baqs").propagate is False
+    assert all(
+        logger.handlers == original_handlers[logger.name]
+        for logger in uvicorn_loggers
+    )
 
 
 def test_configure_logging_is_idempotent_and_does_not_reset_uvicorn() -> None:
-    uvicorn_logger = logging.getLogger("uvicorn.error")
-    original_handlers = list(uvicorn_logger.handlers)
+    uvicorn_loggers = (
+        logging.getLogger("uvicorn.error"),
+        logging.getLogger("uvicorn.access"),
+    )
+    original_handlers = {logger.name: list(logger.handlers) for logger in uvicorn_loggers}
 
     configure_logging("INFO")
     configure_logging("DEBUG")
@@ -44,4 +54,9 @@ def test_configure_logging_is_idempotent_and_does_not_reset_uvicorn() -> None:
     ]
     assert len(baqs_handlers) == 1
     assert baqs_handlers[0].level == logging.DEBUG
-    assert uvicorn_logger.handlers == original_handlers
+    assert isinstance(baqs_handlers[0].formatter, JsonFormatter)
+    assert logging.getLogger("baqs").propagate is False
+    assert all(
+        logger.handlers == original_handlers[logger.name]
+        for logger in uvicorn_loggers
+    )
