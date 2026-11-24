@@ -238,7 +238,6 @@ def test_mixed_strategy_versions_are_rejected() -> None:
         run(bars, mixed)
 
 
-
 def test_short_risk_budget_includes_adverse_stop_exit_costs() -> None:
     bars = [
         bar(0),
@@ -258,7 +257,8 @@ def test_short_risk_budget_includes_adverse_stop_exit_costs() -> None:
         (stop_exit_fill - trade.entry_fill_price) * trade.quantity
         + (stop_exit_fill + trade.entry_fill_price) * fee_rate * trade.quantity
     )
-    assert estimated_stop_loss <= config.initial_equity * config.risk_fraction + Decimal("1e-24")
+    risk_budget = config.initial_equity * config.risk_fraction
+    assert estimated_stop_loss <= risk_budget + Decimal("1e-24")
 
 
 def test_same_bar_entry_and_exit_counts_as_exposure() -> None:

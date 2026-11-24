@@ -52,9 +52,10 @@ parameters. The signal is not a calibrated probability or trade recommendation.
 
 - One open position per symbol; no pyramiding and no leverage.
 - Position size is the lesser of risk-budget size (default 0.5% of current
-equity, inclusive of entry/exit taker fees and the side-specific adverse stop-exit
-fill) and a 1.0x equity gross-notional cap. The short-side exit cost is priced
-above the stop, not approximated from the lower entry fill.
+  equity, inclusive of entry/exit taker fees and the side-specific adverse
+  stop-exit fill) and a 1.0x equity gross-notional cap. The short-side exit
+  cost is priced above the stop, not approximated from the lower entry fill.
+  A gap through the stop can still exceed planned risk.
 - Fixed take-profit is 2R from the adverse-slippage entry fill; stop is the
   strategy's structural stop.
 - All fills are assumed taker. Fee and adverse slippage in bps are explicit.
@@ -72,11 +73,11 @@ above the stop, not approximated from the lower entry fill.
   existed at any point, including same-minute entry/exit.
 - An open position is force-closed at the final observed close and labelled
   `END_OF_DATA`; it is not left as hidden unrealized profit.
-- Gross PnL is computed from adverse-slippage fill prices; slippage cost is also
-reported as a diagnostic component and is not subtracted a second time. R uses
-quantity times the entry-fill-to-initial-stop price distance as its denominator;
-net PnL includes fees, funding and slippage. The engine records gross PnL,
-fees, funding, slippage, net PnL, R multiple,
+- Gross PnL is computed from adverse-slippage fill prices; slippage cost is
+  also reported as a diagnostic component and is not subtracted a second time.
+  R uses quantity times the entry-fill-to-initial-stop price distance as its
+  denominator; net PnL includes fees, funding and slippage.
+- The engine records gross PnL, fees, funding, slippage, net PnL, R multiple,
   per-minute mark-to-market equity, drawdown, win rate, profit factor and
   exposure. Undefined statistics remain null rather than fabricated.
 

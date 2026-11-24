@@ -427,7 +427,11 @@ class BacktestEngine:
             if signal is not None:
                 if had_position_at_open or position is not None:
                     skipped.append(
-                        SkippedSignal(signal.signal_time_ms, signal.side, "POSITION_ALREADY_OPEN")
+                        SkippedSignal(
+                            signal.signal_time_ms,
+                            signal.side,
+                            "POSITION_ALREADY_OPEN",
+                        )
                     )
                 else:
                     reference = bar.open
