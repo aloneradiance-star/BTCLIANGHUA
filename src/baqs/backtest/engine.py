@@ -51,10 +51,7 @@ class BacktestConfig:
     def __post_init__(self) -> None:
         if not self.initial_equity.is_finite() or self.initial_equity <= ZERO:
             raise ValueError("Initial equity must be positive")
-        if (
-            not self.risk_fraction.is_finite()
-            or not ZERO < self.risk_fraction <= ONE
-        ):
+        if not self.risk_fraction.is_finite() or not ZERO < self.risk_fraction <= ONE:
             raise ValueError("Risk fraction must be in (0, 1]")
         if (
             not self.max_notional_fraction.is_finite()
@@ -310,9 +307,7 @@ def _close_position(
     gross = side_sign * (fill - position.entry_fill) * position.quantity
     fees = position.entry_fee + exit_fee
     net = gross - fees - position.funding_cost
-    slippage_cost = (
-        position.entry_slippage + abs(fill - reference) * position.quantity
-    )
+    slippage_cost = position.entry_slippage + abs(fill - reference) * position.quantity
     trade = Trade(
         symbol=position.signal.symbol,
         side=position.signal.side,
@@ -340,9 +335,7 @@ def _close_position(
     return trade, cash + gross - exit_fee
 
 
-def _exit_trigger(
-    position: _OpenPosition, bar: FinalCandle
-) -> tuple[Decimal, str] | None:
+def _exit_trigger(position: _OpenPosition, bar: FinalCandle) -> tuple[Decimal, str] | None:
     if position.signal.side == "LONG":
         stop_hit = bar.open <= position.stop or bar.low <= position.stop
         target_hit = bar.high >= position.target
@@ -402,9 +395,7 @@ class BacktestEngine:
             if position is not None and event is not None:
                 if bar.open_ms > position.entry_time_ms:
                     side_sign = ONE if position.signal.side == "LONG" else -ONE
-                    funding_cost = (
-                        side_sign * position.quantity * event.mark_price * event.rate
-                    )
+                    funding_cost = side_sign * position.quantity * event.mark_price * event.rate
                     position.funding_cost += funding_cost
                     cash -= funding_cost
 
@@ -572,9 +563,9 @@ class BacktestEngine:
         return BacktestResult(
             symbol=symbol,
             strategy_version=(
-                trades[0].strategy_version if trades else (
-                    signals[0].strategy_version if signals else "NO_SIGNALS"
-                )
+                trades[0].strategy_version
+                if trades
+                else (signals[0].strategy_version if signals else "NO_SIGNALS")
             ),
             start_ms=execution_bars[0].open_ms,
             end_ms=execution_bars[-1].close_ms,
