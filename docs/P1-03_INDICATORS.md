@@ -30,8 +30,9 @@ The feature at time T must not change if newer finalized candles are appended af
 
 ## Test requirements and blockers
 - Fixtures cover monotonic up, down, flat, exact population variance, UTC-day reset, zero-volume, no-lookahead, gaps, and full 30-day rolling warm-up.
+- Performance smoke: a complete 2,903-bar 15m feature series (including both 30-day percentile windows) must complete within a generous 10-second CI bound.
 - Compare pure function outputs against hand-derivable constants or independent references, not only against a second call of the same function.
-- A 30-day percentile for 15m requires at least **2900+ contiguous closed candles**. **P1-02 collector currently bootstraps only ~120 bars per feed**. Therefore P1-04 classification must not declare these percentile features ready until a separately bounded, controlled historical backfill exists and passes data continuity checks.
+- A 30-day Bollinger-width percentile for 15m requires **2,900 contiguous closed candles**; the realized-volatility percentile requires **2,901** because the first realized-volatility value needs 20 prior close-to-close returns. **P1-02 collector currently bootstraps only ~120 bars per feed**. Therefore P1-04 classification must not declare these percentile features ready until a separately bounded, controlled historical backfill exists and passes data continuity checks.
 - Long-running live-stream soak tests, production latency, exchange fee models and actual strategy profit validation are outside this phase.
 
 ## Next step

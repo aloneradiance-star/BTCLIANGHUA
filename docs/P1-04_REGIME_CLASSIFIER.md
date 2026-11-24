@@ -18,9 +18,11 @@ The loop is deliberately **not** auto-started with the read-only web API.
 Use only one classifier writer per DB. A unique regime snapshot index prevents
 duplicates but this is not a distributed lock.
 
-`GET /api/v1/market/regimes` shows BTCUSDT and ETHUSDT independent state
-snapshots. Returns UNAVAILABLE with specific reason for missing/gapped or stale
-data; does not infer market certainty from an outdated historical snapshot.
+`GET /api/v1/market/regimes?timeframe=5m` shows BTCUSDT and ETHUSDT independent
+verified classifier states. The accepted `1m`, `15m` and `1h` values expose only
+explicitly labelled historical snapshots; the current v0.1 classifier runs on 5m.
+Returns UNAVAILABLE with a specific reason for missing/gapped or stale data.
+The runner uses UTC wall clock; keep the host NTP-synchronized or it will fail closed.
 
 ## Required inputs and clocks
 - Every evaluation occurs on a **closed** 5m UTC candle. Confirmation uses
@@ -86,3 +88,39 @@ out-of-order observations and corrupt gate state fail closed.
 - A CI-green pure classifier does not prove robust real-time trading quality.
   Before Phase 2, do controlled market-data soak tests and verify classifier
   outputs across historical bull/bear/range/volatility phases.
+
+## Example read-only response
+
+Illustrative shape for `GET /api/v1/market/regimes?timeframe=5m` (values are
+examples, not live market observations):
+
+```json
+{
+  "observed_at": "2026-11-18T12:15:01+00:00",
+  "timeframe": "5m",
+  "symbols": {
+    "BTCUSDT": {
+      "status": "READY",
+      "symbol": "BTCUSDT",
+      "regime": "TRANSITION",
+      "timeframe": "5m",
+      "candle_close_time": "2026-11-18T12:15:00+00:00",
+      "classifier_version": "rules-0.1",
+      "features": {
+        "candidate": "TRANSITION",
+        "signal_allowed": false,
+        "probability_calibrated": false
+      },
+      "reasons": ["NO_VALID_MARKET_STATE"],
+      "execution_enabled": false
+    },
+    "ETHUSDT": {
+      "status": "UNAVAILABLE",
+      "symbol": "ETHUSDT",
+      "timeframe": "5m",
+      "reason": "NO_CLASSIFICATION"
+    }
+  },
+  "execution_enabled": false
+}
+```

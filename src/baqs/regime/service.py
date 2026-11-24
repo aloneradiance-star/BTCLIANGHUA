@@ -28,6 +28,10 @@ def _as_milliseconds(value: datetime) -> int:
 
 
 def _to_final_candle(item: Candle) -> FinalCandle:
+    if item.quote_volume is None or item.trade_count is None:
+        raise RegimeUnavailable("INCOMPLETE_CANDLE_METADATA")
+    if item.source not in {"REST", "WS"}:
+        raise RegimeUnavailable("UNTRUSTED_CANDLE_SOURCE")
     return FinalCandle(
         symbol=item.symbol,
         timeframe=item.timeframe,
@@ -38,11 +42,9 @@ def _to_final_candle(item: Candle) -> FinalCandle:
         low=item.low,
         close=item.close,
         volume=item.volume,
-        quote_volume=(
-            item.quote_volume if item.quote_volume is not None else item.volume * item.close
-        ),
-        trade_count=item.trade_count if item.trade_count is not None else 0,
-        source="REST" if item.source != "WS" else "WS",
+        quote_volume=item.quote_volume,
+        trade_count=item.trade_count,
+        source=item.source,
     )
 
 
@@ -134,8 +136,21 @@ class RegimeResearchService:
 
         with Session(self.engine) as session:
             previous = self._last_snapshot(session, symbol)
-            if previous is not None:
+            if previous is None:
+                gate_state = GateState()
+            else:
+                if not isinstance(previous.features, dict):
+                    raise RegimeUnavailable("UNVERIFIED_LEGACY_SNAPSHOT")
+                try:
+                    gate_state = GateState.from_dict(previous.features.get("gate_state"))
+                except ValueError as exc:
+                    raise RegimeUnavailable("CORRUPT_PERSISTED_GATE_STATE") from exc
                 last_close = _as_milliseconds(previous.candle_close_time)
+                if (
+                    gate_state.last_processed_ms != last_close
+                    or gate_state.current != previous.regime
+                ):
+                    raise RegimeUnavailable("GATE_STATE_SNAPSHOT_MISMATCH")
                 if last_close > close_ms:
                     raise RegimeUnavailable("OUT_OF_ORDER_REGIME_OBSERVATION")
                 if last_close == close_ms:
@@ -147,18 +162,6 @@ class RegimeResearchService:
             features15 = compute_features(bars15)
             features1h = compute_features(bars1h)
             candidate = classify_candidate(bars15, features15, features1h)
-
-            if previous is None:
-                gate_state = GateState()
-            else:
-                saved_state = previous.features.get("gate_state")
-                try:
-                    gate_state = GateState.from_dict(saved_state)
-                except ValueError as exc:
-                    raise RegimeUnavailable("CORRUPT_PERSISTED_GATE_STATE") from exc
-            if gate_state.last_processed_ms is not None and previous is not None:
-                if gate_state.last_processed_ms != _as_milliseconds(previous.candle_close_time):
-                    raise RegimeUnavailable("GATE_TIMESTAMP_MISMATCH")
 
             transition = advance(gate_state, candidate.regime, close_ms)
             snapshot = RegimeSnapshot(
@@ -219,10 +222,17 @@ class RegimeResearchService:
                     "reason": "STALE_CLASSIFICATION",
                     "last_candle_close_time": last.candle_close_time.isoformat(),
                 }
-            if not isinstance(last.features, dict) or not isinstance(
-                last.features.get("gate_state"), dict
-            ):
+            if not isinstance(last.features, dict):
                 return {"status": "UNAVAILABLE", "reason": "UNVERIFIED_LEGACY_SNAPSHOT"}
+            try:
+                gate_state = GateState.from_dict(last.features.get("gate_state"))
+            except ValueError:
+                return {"status": "UNAVAILABLE", "reason": "CORRUPT_PERSISTED_GATE_STATE"}
+            if (
+                gate_state.last_processed_ms != close_ms
+                or gate_state.current != last.regime
+            ):
+                return {"status": "UNAVAILABLE", "reason": "GATE_STATE_SNAPSHOT_MISMATCH"}
             for timeframe, count in REQUIRED.items():
                 end = clock_ms // INTERVAL_MS[timeframe] * INTERVAL_MS[timeframe]
                 readiness = self.store.history_readiness(
