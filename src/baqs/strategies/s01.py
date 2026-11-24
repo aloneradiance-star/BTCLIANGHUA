@@ -54,7 +54,7 @@ def latest_completed_feature(
 ) -> FeatureRow | None:
     """Return the most recent feature whose candle is closed by the as-of boundary."""
     close_times = [feature.close_ms for feature in features]
-    if any(right <= left for left, right in zip(close_times, close_times[1:])):
+    if any(right <= left for left, right in zip(close_times, close_times[1:], strict=False)):
         raise ValueError("Feature timestamps must be strictly increasing")
     index = bisect_right(close_times, as_of_close_ms) - 1
     return None if index < 0 else features[index]
