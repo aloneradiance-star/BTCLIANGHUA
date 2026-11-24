@@ -26,7 +26,7 @@ to exact hour boundaries):
 ```bash
 python -m baqs.market_data.backfill --timeframe 1m --symbols BTCUSDT ETHUSDT --start-ms <HISTORY_START_MS> --end-ms <HISTORY_END_MS>
 python -m baqs.market_data.backfill --timeframe 15m --symbols BTCUSDT ETHUSDT --start-ms <HISTORY_START_MS> --end-ms <HISTORY_END_MS>
-python -m baqs.market_data.backfill --timeframe 1h --symbols BTCUSDT ETHUSDT --start-ms <HISTORY_START_HOUR_MS> --end-ms <HISTORY_END_HOUR_MS>
+python -m baqs.market_data.backfill --timeframe 1h --symbols BTCUSDT ETHUSDT --start-ms <HISTORY_START_HOUR_MS> --end-ms <EVAL_END_HOUR_MS>
 ```
 
 ## Evaluation layout
