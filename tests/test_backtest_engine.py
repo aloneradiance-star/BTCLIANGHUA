@@ -262,3 +262,15 @@ def test_regular_and_special_funding_at_same_boundary_are_both_applied() -> None
         expected=(funding_time, funding_time),
     )
     assert result.trades[0].funding_cost > Decimal(".14")
+
+
+def test_duplicate_same_rate_type_funding_event_is_rejected() -> None:
+    funding_time = START + 60_000
+    event = FundingEvent("BTCUSDT", funding_time, Decimal(".001"), Decimal(100))
+    with pytest.raises(BacktestUnavailable, match="Duplicate funding event key"):
+        run(
+            [bar(0), bar(1), bar(2)],
+            [signal()],
+            events=[event, event],
+            expected=(funding_time, funding_time),
+        )
