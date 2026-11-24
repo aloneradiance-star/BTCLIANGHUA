@@ -223,6 +223,14 @@ def test_missing_execution_metadata_is_not_synthesized(
     assert report.reason == reason
 
 
+def test_missing_funding_manifest_blocks_replay(db_engine: Engine) -> None:
+    seed_history(db_engine)
+    report = service(db_engine).run("BTCUSDT", START, END)
+    assert report.status == "UNAVAILABLE"
+    assert report.result is None
+    assert "no complete coverage manifest" in (report.reason or "")
+
+
 def test_tampered_funding_manifest_blocks_replay(db_engine: Engine) -> None:
     seed_history(db_engine)
     seed_funding(db_engine)
