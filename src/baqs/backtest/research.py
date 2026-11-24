@@ -355,9 +355,7 @@ class S01ResearchService:
                 "context_end_ms": last_completed_hour,
                 "preceding_closed_bars": WARMUP_1H_BARS,
                 "bar_count": len(context_bars),
-                "latest_completed_close_ms": (
-                    context_bars[-1].close_ms if context_bars else None
-                ),
+                "latest_completed_close_ms": (context_bars[-1].close_ms if context_bars else None),
                 "sha256": context_digest,
                 "source_counts": _source_counts(context_bars),
             },
