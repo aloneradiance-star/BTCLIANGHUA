@@ -1,5 +1,6 @@
 """Read-only S01 data adapter, causal context and deterministic replay tests."""
 
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -156,6 +157,7 @@ def test_successful_replay_is_deterministic_and_performs_zero_database_writes(
     assert first.result.trades[0].funding_cost > 0
     assert first.warmup["required_preceding_15m_bars"] == 2920
     assert first.warmup["required_preceding_closed_1h_bars"] == 120
+    assert first.strategy_parameters["adx_min"] == "23"
     assert first.data_provenance["completed_context_1h"]["latest_completed_close_ms"] == START
     assert report_json(first) == report_json(second)
     assert table_counts(db_engine) == before
@@ -271,6 +273,13 @@ def test_missing_multitimeframe_warmup_blocks_replay(
     assert report.status == "UNAVAILABLE"
     assert report.result is None
     assert timeframe.upper() in (report.reason or "")
+
+
+def test_future_evaluation_window_returns_unavailable(db_engine: Engine) -> None:
+    next_quarter = (int(datetime.now(UTC).timestamp() * 1000) // QUARTER + 1) * QUARTER
+    report = service(db_engine).run("BTCUSDT", next_quarter, next_quarter + QUARTER)
+    assert report.status == "UNAVAILABLE"
+    assert report.reason == "EVALUATION_WINDOW_IN_FUTURE"
 
 
 def test_unaligned_or_reversed_window_is_rejected(db_engine: Engine) -> None:
