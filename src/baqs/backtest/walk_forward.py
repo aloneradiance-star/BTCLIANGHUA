@@ -9,13 +9,19 @@ from typing import Any, Literal, cast
 from sqlalchemy.engine import Engine
 
 from baqs.backtest.engine import BacktestConfig, CostModel
-from baqs.backtest.research import MAX_EXECUTION_BARS, S01ResearchReport, S01ResearchService
+from baqs.backtest.research import (
+    MAX_EXECUTION_BARS,
+    WARMUP_15M_BARS,
+    S01ResearchReport,
+    S01ResearchService,
+)
 from baqs.db import make_engine
 from baqs.market_data.schema import INTERVAL_MS, SYMBOLS
 from baqs.settings import get_settings
 from baqs.strategies.s01 import S01Config
 
 ZERO = Decimal(0)
+MAX_HISTORY_WINDOW_MS = 90 * 24 * 60 * 60 * 1000
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +71,8 @@ class WalkForwardReport:
     cells: tuple[WalkForwardCell, ...]
     aggregate_by_scenario: dict[str, dict[str, object]]
     reason: str | None
+    market_regime_coverage: str = "NOT_EVALUATED"
+    robustness_assessment: str = "NOT_MADE"
 
 
 def fold_windows(start_ms: int, end_ms: int, fold_count: int) -> tuple[FoldWindow, ...]:
@@ -85,6 +93,8 @@ def fold_windows(start_ms: int, end_ms: int, fold_count: int) -> tuple[FoldWindo
     if duration % fold_count:
         raise ValueError("Evaluation range must divide evenly across folds")
     fold_duration = duration // fold_count
+    if duration + WARMUP_15M_BARS * step > MAX_HISTORY_WINDOW_MS:
+        raise ValueError("Evaluation plus 15m warm-up must fit within the 90-day history cap")
     if fold_duration % step:
         raise ValueError("Every fold boundary must remain 15m-aligned")
     if fold_duration // INTERVAL_MS["1m"] > MAX_EXECUTION_BARS:
@@ -170,6 +180,8 @@ def _aggregate_scenario(
         "minimum_trades_per_fold": minimum_trades_per_fold,
         "sufficient_sample": all(count >= minimum_trades_per_fold for count in trade_counts),
         "aggregation_basis": "summed independent fold PnL; not a compounded portfolio return",
+        "market_regime_coverage": "NOT_EVALUATED",
+        "robustness_assessment": "NOT_MADE",
     }
 
 
@@ -184,7 +196,6 @@ class WalkForwardResearchService:
         fold_count: int = 3,
         minimum_trades_per_fold: int = 5,
         config: BacktestConfig | None = None,
-        strategy_config: S01Config | None = None,
     ) -> None:
         scenarios = tuple(cost_scenarios)
         if len(scenarios) < 2 or len({scenario.name for scenario in scenarios}) != len(scenarios):
@@ -198,7 +209,6 @@ class WalkForwardResearchService:
         self.fold_count = fold_count
         self.minimum_trades_per_fold = minimum_trades_per_fold
         self.config = config if config is not None else BacktestConfig()
-        self.strategy_config = strategy_config if strategy_config is not None else S01Config()
 
     def run(self, symbol: str, start_ms: int, end_ms: int) -> WalkForwardReport:
         if symbol not in SYMBOLS:
@@ -206,7 +216,8 @@ class WalkForwardResearchService:
         folds = fold_windows(start_ms, end_ms, self.fold_count)
         cells: list[WalkForwardCell] = []
         strategy_parameters: dict[str, str] = {}
-        strategy_version = self.strategy_config.strategy_version
+        strategy_config = S01Config()
+        strategy_version = strategy_config.strategy_version
 
         for fold in folds:
             for scenario in self.cost_scenarios:
@@ -214,7 +225,7 @@ class WalkForwardResearchService:
                     self.engine,
                     costs=CostModel(scenario.taker_fee_bps, scenario.slippage_bps),
                     config=self.config,
-                    strategy_config=self.strategy_config,
+                    strategy_config=strategy_config,
                 ).run(symbol, fold.start_ms, fold.end_ms)
                 cells.append(WalkForwardCell(fold.index, scenario.name, report))
                 if report.status != "READY":

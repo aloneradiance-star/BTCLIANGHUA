@@ -106,6 +106,11 @@ def test_fold_windows_are_equal_adjacent_and_half_open() -> None:
         (START, END + QUARTER, 3),
     ],
 )
+def test_fold_windows_enforces_90_day_history_cap_including_warmup() -> None:
+    with pytest.raises(ValueError, match="90-day history cap"):
+        fold_windows(START, START + 60 * DAY, 3)
+
+
 def test_fold_windows_reject_unaligned_or_nondivisible_ranges(
     start_ms: int, end_ms: int, fold_count: int
 ) -> None:
@@ -154,9 +159,12 @@ def test_walk_forward_cost_sensitivity_is_deterministic_and_read_only(
     second = service.run("BTCUSDT", START, END)
 
     assert first.status == "READY"
+    assert first.market_regime_coverage == "NOT_EVALUATED"
+    assert first.robustness_assessment == "NOT_MADE"
     assert len(first.cells) == 6
     assert first.aggregate_by_scenario["low"]["trade_counts_by_fold"] == [1, 1, 1]
     assert first.aggregate_by_scenario["stress"]["trade_counts_by_fold"] == [1, 1, 1]
+    assert first.aggregate_by_scenario["base"]["robustness_assessment"] == "NOT_MADE"
     low_net = first.aggregate_by_scenario["low"]["net_pnl"]
     stress_net = first.aggregate_by_scenario["stress"]["net_pnl"]
     assert low_net > stress_net
