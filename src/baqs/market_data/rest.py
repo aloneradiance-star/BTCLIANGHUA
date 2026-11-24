@@ -125,7 +125,7 @@ class PublicFuturesREST:
 
     async def fetch_funding_range(
         self, symbol: str, start_ms: int, end_ms: int, *,
-        page_size: int = 1000, max_pages: int = 100, pause_seconds: float = 1.0,
+        page_size: int = 1000, max_pages: int = 100, pause_seconds: float = 1.25,
     ) -> list[FundingRateRecord]:
         """Fetch [start_ms, end_ms) with inclusive REST bounds and bounded pagination."""
         if symbol not in SYMBOLS:
