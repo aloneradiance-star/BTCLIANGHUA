@@ -47,6 +47,18 @@ class GateState:
                 last_processed is not None
                 and (type(last_processed) is not int or last_processed < 0)
             )
+            or (last_switch is not None and last_switch % FIVE_MIN_MS != 0)
+            or (last_processed is not None and last_processed % FIVE_MIN_MS != 0)
+            or (
+                last_switch is not None and (last_processed is None or last_switch > last_processed)
+            )
+            or (pending is None and confirms != 0)
+            or (
+                pending is not None
+                and (confirms < 1 or pending == current or pending == "HIGH_RISK")
+            )
+            or (current == "HIGH_RISK" and pending is not None)
+            or (current != "TRANSITION" and last_switch is None)
         ):
             raise ValueError("Invalid persisted gate fields")
         return cls(current, pending, confirms, last_switch, last_processed)

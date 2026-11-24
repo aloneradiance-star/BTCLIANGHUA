@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, delete, insert
+from sqlalchemy import Engine, delete, insert, update
 
 from baqs.api import create_app
 from baqs.market_data.repository import CandleStore
@@ -104,6 +104,7 @@ def test_api_shows_readiness_not_fake_market_signals(db_engine: Engine) -> None:
     expected = response.json()["symbols"]["BTCUSDT"]["15m"]
     assert expected["status"] == "NO_DATA"
     assert expected["required_bars"] == 2920
+    assert response.json()["symbols"]["BTCUSDT"]["1h"]["required_bars"] == 120
     assert "orders" not in response.json()
 
 
@@ -127,7 +128,7 @@ def test_full_2920_bar_15m_percentile_reference_is_contiguous(db_engine: Engine)
             "quote_volume": Decimal(100),
             "trade_count": 5,
             "is_final": True,
-            "source": "TEST_FIXTURE",
+            "source": "REST",
         }
         for i in range(n)
     ]
@@ -150,3 +151,77 @@ def test_full_2920_bar_15m_percentile_reference_is_contiguous(db_engine: Engine)
     gap = store.history_readiness("BTCUSDT", "15m", end_ms, required_bars=n, require_latest=True)
     assert gap["status"] == "GAP"
     assert gap["first_missing_open_ms"] == first_ms + 100 * step
+
+
+def test_future_latest_bar_does_not_certify_older_window(db_engine: Engine) -> None:
+    store = CandleStore(db_engine)
+    for i in (1, 2, 3, 4):
+        store.upsert(closed(i))
+    report = store.history_readiness(
+        "BTCUSDT",
+        "1h",
+        4 * STEP,
+        required_bars=3,
+        require_latest=True,
+    )
+    assert report["status"] == "STALE"
+
+
+def test_wrong_exclusive_close_boundary_invalidates_readiness(db_engine: Engine) -> None:
+    store = CandleStore(db_engine)
+    for i in (1, 2, 3):
+        store.upsert(closed(i))
+    target = closed(2)
+    with db_engine.begin() as connection:
+        connection.execute(
+            update(Candle)
+            .where(
+                Candle.symbol == target.symbol,
+                Candle.timeframe == target.timeframe,
+                Candle.open_time == target.open_time,
+            )
+            .values(close_time=target.open_time)
+        )
+    report = store.history_readiness("BTCUSDT", "1h", 4 * STEP, required_bars=3)
+    assert report["status"] == "GAP"
+    assert report["invalid_close_count"] == 1
+
+
+def test_missing_required_metadata_invalidates_readiness(db_engine: Engine) -> None:
+    store = CandleStore(db_engine)
+    for i in (1, 2, 3):
+        store.upsert(closed(i))
+    target = closed(2)
+    with db_engine.begin() as connection:
+        connection.execute(
+            update(Candle)
+            .where(
+                Candle.symbol == target.symbol,
+                Candle.timeframe == target.timeframe,
+                Candle.open_time == target.open_time,
+            )
+            .values(quote_volume=None)
+        )
+    report = store.history_readiness("BTCUSDT", "1h", 4 * STEP, required_bars=3)
+    assert report["status"] == "GAP"
+    assert report["invalid_metadata_count"] == 1
+
+
+def test_untrusted_source_invalidates_readiness(db_engine: Engine) -> None:
+    store = CandleStore(db_engine)
+    for i in (1, 2, 3):
+        store.upsert(closed(i))
+    target = closed(2)
+    with db_engine.begin() as connection:
+        connection.execute(
+            update(Candle)
+            .where(
+                Candle.symbol == target.symbol,
+                Candle.timeframe == target.timeframe,
+                Candle.open_time == target.open_time,
+            )
+            .values(source="FIXTURE")
+        )
+    report = store.history_readiness("BTCUSDT", "1h", 4 * STEP, required_bars=3)
+    assert report["status"] == "GAP"
+    assert report["invalid_metadata_count"] == 1

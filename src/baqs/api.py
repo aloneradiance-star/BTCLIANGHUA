@@ -1,5 +1,8 @@
 """Read-only public data API. Absolutely no trading endpoints in Phase 1."""
 
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import cast
 
@@ -9,14 +12,17 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from baqs.db import make_engine
+from baqs.logging_config import configure_logging
 from baqs.market_data.repository import CandleStore
 from baqs.market_data.schema import INTERVAL_MS
-from baqs.models import Candle
+from baqs.models import Candle, RegimeSnapshot
 from baqs.regime.service import RegimeResearchService
 from baqs.settings import Settings, get_settings
 
 SYMBOLS = ("BTCUSDT", "ETHUSDT")
 TIMEFRAMES = ("1m", "5m", "15m", "1h")
+
+logger = logging.getLogger(__name__)
 
 
 def _engine(request: Request) -> Engine:
@@ -28,12 +34,21 @@ def _engine(request: Request) -> Engine:
 
 
 def create_app(*, settings: Settings | None = None, engine: Engine | None = None) -> FastAPI:
+    runtime_settings = settings if settings is not None else get_settings()
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        configure_logging(runtime_settings.log_level)
+        logger.info("application_started")
+        yield
+
     app = FastAPI(
         title="BAQS Phase 1",
         description="Read-only public market research. No orders or account access.",
         version="0.1.0",
+        lifespan=lifespan,
     )
-    app.state.settings = settings if settings is not None else get_settings()
+    app.state.settings = runtime_settings
     app.state.engine = engine
 
     @app.get("/api/v1/health")
@@ -144,13 +159,69 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
         }
 
     @app.get("/api/v1/market/regimes")
-    def regimes(request: Request) -> dict[str, object]:
-        """Read-only six-state research snapshots; stale/invalid feeds are UNAVAILABLE."""
-        clock_ms = int(datetime.now(UTC).timestamp() * 1000)
-        service = RegimeResearchService(_engine(request))
+    def regimes(
+        request: Request,
+        timeframe: str = Query(
+            default="5m",
+            description=(
+                "Supported values: 1m, 5m, 15m, 1h. "
+                "The current verified classifier runs on 5m; "
+                "other intervals expose historical snapshots."
+            ),
+        ),
+    ) -> dict[str, object]:
+        """Return a verified 5m classifier state or explicitly historical snapshots."""
+        if timeframe not in TIMEFRAMES:
+            raise HTTPException(status_code=422, detail="Invalid timeframe")
+
+        output: dict[str, object] = {}
+        if timeframe == "5m":
+            clock_ms = int(datetime.now(UTC).timestamp() * 1000)
+            service = RegimeResearchService(_engine(request))
+            for symbol in SYMBOLS:
+                item = service.latest(symbol, clock_ms=clock_ms)
+                if item.get("status") == "UNAVAILABLE":
+                    item = {**item, "symbol": symbol, "timeframe": timeframe}
+                output[symbol] = item
+        else:
+            with Session(_engine(request)) as session:
+                for symbol in SYMBOLS:
+                    item = session.scalar(
+                        select(RegimeSnapshot)
+                        .where(
+                            RegimeSnapshot.symbol == symbol,
+                            RegimeSnapshot.timeframe == timeframe,
+                        )
+                        .order_by(
+                            RegimeSnapshot.candle_close_time.desc(),
+                            RegimeSnapshot.created_at.desc(),
+                            RegimeSnapshot.classifier_version.desc(),
+                        )
+                        .limit(1)
+                    )
+                    if item is None:
+                        output[symbol] = {
+                            "status": "UNAVAILABLE",
+                            "symbol": symbol,
+                            "timeframe": timeframe,
+                            "reason": "NO_CLASSIFICATION",
+                        }
+                    else:
+                        output[symbol] = {
+                            "status": "HISTORICAL_SNAPSHOT",
+                            "symbol": symbol,
+                            "timeframe": timeframe,
+                            "regime": item.regime,
+                            "candle_close_time": item.candle_close_time.isoformat(),
+                            "classifier_version": item.classifier_version,
+                            "features": item.features,
+                            "reasons": item.reasons,
+                            "execution_enabled": False,
+                        }
         return {
             "observed_at": datetime.now(UTC).isoformat(),
-            "symbols": {symbol: service.latest(symbol, clock_ms=clock_ms) for symbol in SYMBOLS},
+            "timeframe": timeframe,
+            "symbols": output,
             "execution_enabled": False,
         }
 

@@ -1,6 +1,6 @@
 """Read-only API and no-fabricated-market-data tests."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -8,7 +8,7 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from baqs.api import create_app
-from baqs.models import Candle
+from baqs.models import Candle, RegimeSnapshot
 from baqs.settings import Settings
 
 
@@ -23,11 +23,21 @@ def client_for(engine: Engine) -> TestClient:
 
 def test_health_reports_no_execution(db_engine: Engine) -> None:
     client = client_for(db_engine)
-    data = client.get("/api/v1/health").json()
+    response = client.get("/api/v1/health")
+    data = response.json()
+    assert response.status_code == 503
     assert data["database"] == "CONNECTED"
     assert data["execution_enabled"] is False
     assert data["market_data"] == "UNAVAILABLE"
-    assert client.get("/api/v1/health").status_code == 503
+
+
+def test_market_health_no_data_does_not_claim_ready(db_engine: Engine) -> None:
+    response = client_for(db_engine).get("/api/v1/market/health")
+    assert response.status_code == 200
+    feeds = response.json()["feeds"]
+    assert feeds["BTCUSDT"]["1m"]["status"] == "NO_DATA"
+    assert feeds["ETHUSDT"]["1h"]["status"] == "NO_DATA"
+    assert response.json()["execution_enabled"] is False
 
 
 def test_absent_regimes_unavailable(db_engine: Engine) -> None:
@@ -37,6 +47,77 @@ def test_absent_regimes_unavailable(db_engine: Engine) -> None:
     symbols = result.json()["symbols"]
     assert symbols["BTCUSDT"]["status"] == "UNAVAILABLE"
     assert symbols["ETHUSDT"]["status"] == "UNAVAILABLE"
+
+
+def test_regimes_are_scoped_to_requested_timeframe(db_engine: Engine) -> None:
+    open_time = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
+    durations = {
+        "1m": timedelta(minutes=1),
+        "15m": timedelta(minutes=15),
+        "1h": timedelta(hours=1),
+    }
+    expected_regimes = {
+        "1m": "TRANSITION",
+        "15m": "RANGE",
+        "1h": "BEAR_TREND",
+    }
+
+    with Session(db_engine) as session:
+        for timeframe, duration in durations.items():
+            close_time = open_time + duration
+            session.add(
+                Candle(
+                    symbol="BTCUSDT",
+                    timeframe=timeframe,
+                    open_time=open_time,
+                    close_time=close_time,
+                    open=Decimal("100"),
+                    high=Decimal("101"),
+                    low=Decimal("99"),
+                    close=Decimal("100.5"),
+                    volume=Decimal("1"),
+                    is_final=True,
+                    source="FIXTURE",
+                )
+            )
+            session.add(
+                RegimeSnapshot(
+                    symbol="BTCUSDT",
+                    timeframe=timeframe,
+                    candle_open_time=open_time,
+                    candle_close_time=close_time,
+                    regime=expected_regimes[timeframe],
+                    features={"timeframe_probe": timeframe},
+                    reasons=["TIMEFRAME_FIXTURE"],
+                    classifier_version=f"test-{timeframe}",
+                )
+            )
+        session.commit()
+
+    client = client_for(db_engine)
+    for timeframe, expected_regime in expected_regimes.items():
+        response = client.get(f"/api/v1/market/regimes?timeframe={timeframe}")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["timeframe"] == timeframe
+        btc = payload["symbols"]["BTCUSDT"]
+        assert btc["timeframe"] == timeframe
+        assert btc["status"] == "HISTORICAL_SNAPSHOT"
+        assert btc["regime"] == expected_regime
+        assert btc["features"]["timeframe_probe"] == timeframe
+        eth = payload["symbols"]["ETHUSDT"]
+        assert eth["status"] == "UNAVAILABLE"
+        assert eth["timeframe"] == timeframe
+
+    default_payload = client.get("/api/v1/market/regimes").json()
+    assert default_payload["timeframe"] == "5m"
+    assert default_payload["symbols"]["BTCUSDT"]["status"] == "UNAVAILABLE"
+    assert default_payload["symbols"]["BTCUSDT"]["reason"] == "5M_HISTORY_NO_DATA"
+
+
+def test_regimes_reject_unsupported_timeframe(db_engine: Engine) -> None:
+    response = client_for(db_engine).get("/api/v1/market/regimes?timeframe=2m")
+    assert response.status_code == 422
 
 
 def test_candles_only_returns_finalized(db_engine: Engine) -> None:
@@ -95,10 +176,9 @@ def test_no_write_or_trading_routes(db_engine: Engine) -> None:
         assert set(operations).issubset({"get"})
 
 
-def test_market_health_no_data_does_not_claim_ready(db_engine: Engine) -> None:
-    response = client_for(db_engine).get("/api/v1/market/health")
-    assert response.status_code == 200
-    feeds = response.json()["feeds"]
-    assert feeds["BTCUSDT"]["1m"]["status"] == "NO_DATA"
-    assert feeds["ETHUSDT"]["1h"]["status"] == "NO_DATA"
-    assert response.json()["execution_enabled"] is False
+def test_regime_timeframe_default_is_documented(db_engine: Engine) -> None:
+    schema = client_for(db_engine).get("/openapi.json").json()
+    parameters = schema["paths"]["/api/v1/market/regimes"]["get"]["parameters"]
+    timeframe = next(parameter for parameter in parameters if parameter["name"] == "timeframe")
+    assert timeframe["schema"]["default"] == "5m"
+    assert "Supported values: 1m, 5m, 15m, 1h" in timeframe["description"]

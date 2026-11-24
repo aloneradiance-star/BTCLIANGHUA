@@ -420,10 +420,16 @@ class BacktestEngine:
                     trades.append(trade)
                     position = None
 
-            # A position closed inside this bar cannot be reopened in that same bar.
-            if not had_position_at_open and position is None:
-                signal = signal_by_time.get(bar.open_ms)
-                if signal is not None:
+            # Signals that arrive while a position is open are never queued or
+            # reopened after an intrabar exit; record the skipped opportunity.
+            entered_this_bar = False
+            signal = signal_by_time.get(bar.open_ms)
+            if signal is not None:
+                if had_position_at_open or position is not None:
+                    skipped.append(
+                        SkippedSignal(signal.signal_time_ms, signal.side, "POSITION_ALREADY_OPEN")
+                    )
+                else:
                     reference = bar.open
                     fill = _entry_fill(reference, signal.side, slippage_rate)
                     valid_stop = (
@@ -437,59 +443,72 @@ class BacktestEngine:
                         )
                     else:
                         stop_distance = abs(fill - signal.stop_price)
-                        # Entry slippage is already reflected in stop_distance; reserve
-                        # both taker fees and one adverse exit slippage in the risk budget.
-                        risk_per_unit = stop_distance + fill * (
-                            Decimal(2) * fee_rate + slippage_rate
-                        )
-                        equity_at_entry = cash
-                        risk_budget = equity_at_entry * config.risk_fraction
-                        notional_cap = equity_at_entry * config.max_notional_fraction
-                        quantity_by_risk = risk_budget / risk_per_unit
-                        quantity_by_notional = notional_cap / fill
-                        quantity = min(quantity_by_risk, quantity_by_notional)
-                        if quantity <= ZERO:
+                        side_sign = ONE if signal.side == "LONG" else -ONE
+                        target = fill + side_sign * stop_distance * config.reward_risk
+                        if target <= ZERO:
                             skipped.append(
                                 SkippedSignal(
-                                    signal.signal_time_ms, signal.side, "ZERO_POSITION_SIZE"
+                                    signal.signal_time_ms, signal.side, "NONPOSITIVE_TAKE_PROFIT"
                                 )
                             )
                         else:
-                            side_sign = ONE if signal.side == "LONG" else -ONE
-                            target = fill + side_sign * stop_distance * config.reward_risk
-                            entry_fee = fill * quantity * fee_rate
-                            entry_slippage = abs(fill - reference) * quantity
-                            position = _OpenPosition(
-                                signal=signal,
-                                entry_time_ms=bar.open_ms,
-                                entry_reference=reference,
-                                entry_fill=fill,
-                                quantity=quantity,
-                                stop=signal.stop_price,
-                                target=target,
-                                risk_amount=quantity * stop_distance,
-                                entry_fee=entry_fee,
-                                entry_slippage=entry_slippage,
+                            # Price the stop-side exit with adverse slippage and
+                            # charge entry/exit fees at their respective fill prices.
+                            stop_exit_fill = _exit_fill(
+                                signal.stop_price,
+                                signal.side,
+                                slippage_rate,
                             )
-                            cash -= entry_fee
-                            # Entry may be stopped/targeted within this same 1m bar.
-                            trigger = _exit_trigger(position, bar)
-                            if trigger is not None:
-                                exit_reference, reason = trigger
-                                trade, cash = _close_position(
-                                    position,
-                                    bar,
-                                    exit_reference,
-                                    reason,
-                                    exact_close=False,
-                                    fee_rate=fee_rate,
-                                    slippage_rate=slippage_rate,
-                                    cash=cash,
+                            risk_per_unit = abs(fill - stop_exit_fill) + (
+                                fill + stop_exit_fill
+                            ) * fee_rate
+                            equity_at_entry = cash
+                            risk_budget = equity_at_entry * config.risk_fraction
+                            notional_cap = equity_at_entry * config.max_notional_fraction
+                            quantity_by_risk = risk_budget / risk_per_unit
+                            quantity_by_notional = notional_cap / fill
+                            quantity = min(quantity_by_risk, quantity_by_notional)
+                            if quantity <= ZERO:
+                                skipped.append(
+                                    SkippedSignal(
+                                        signal.signal_time_ms, signal.side, "ZERO_POSITION_SIZE"
+                                    )
                                 )
-                                trades.append(trade)
-                                position = None
+                            else:
+                                entry_fee = fill * quantity * fee_rate
+                                entry_slippage = abs(fill - reference) * quantity
+                                position = _OpenPosition(
+                                    signal=signal,
+                                    entry_time_ms=bar.open_ms,
+                                    entry_reference=reference,
+                                    entry_fill=fill,
+                                    quantity=quantity,
+                                    stop=signal.stop_price,
+                                    target=target,
+                                    risk_amount=quantity * stop_distance,
+                                    entry_fee=entry_fee,
+                                    entry_slippage=entry_slippage,
+                                )
+                                cash -= entry_fee
+                                entered_this_bar = True
+                                # Entry may be stopped/targeted within this same 1m bar.
+                                trigger = _exit_trigger(position, bar)
+                                if trigger is not None:
+                                    exit_reference, reason = trigger
+                                    trade, cash = _close_position(
+                                        position,
+                                        bar,
+                                        exit_reference,
+                                        reason,
+                                        exact_close=False,
+                                        fee_rate=fee_rate,
+                                        slippage_rate=slippage_rate,
+                                        cash=cash,
+                                    )
+                                    trades.append(trade)
+                                    position = None
 
-            if had_position_at_open or position is not None:
+            if had_position_at_open or position is not None or entered_this_bar:
                 active_bars += 1
 
             # Close the last open position at the final observed close, never leave

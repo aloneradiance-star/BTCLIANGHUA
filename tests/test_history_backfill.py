@@ -13,7 +13,7 @@ from baqs.market_data.rest import PublicFuturesREST
 from baqs.market_data.schema import CandleConflict, CandleGap, FinalCandle
 
 STEP = 3_600_000
-ANCHOR = 80 * STEP
+ANCHOR = 200 * STEP
 
 
 def closed(index: int, *, price: int = 100) -> FinalCandle:
@@ -65,17 +65,17 @@ def test_complete_backfill_and_rerun_skips_all_verified_chunks(db_engine: Engine
         store = CandleStore(db_engine)
         reader = StubReader()
         history = PublicHistoryBackfill(reader, store, chunk_bars=20, pause_seconds=0)
-        first = await history.run("BTCUSDT", "1h", bars=60)
+        first = await history.run("BTCUSDT", "1h", bars=120)
         assert first.readiness == "READY"
-        assert first.created_bars == first.fetched_bars == 60
+        assert first.created_bars == first.fetched_bars == 120
         assert first.reused_chunks == 0
         assert (
-            store.history_readiness("BTCUSDT", "1h", ANCHOR, required_bars=60)["status"] == "READY"
+            store.history_readiness("BTCUSDT", "1h", ANCHOR, required_bars=120)["status"] == "READY"
         )
-        again = await history.run("BTCUSDT", "1h", bars=60)
+        again = await history.run("BTCUSDT", "1h", bars=120)
         assert again.fetched_bars == again.created_bars == 0
-        assert again.reused_chunks == 3
-        assert len(reader.calls) == 3
+        assert again.reused_chunks == 6
+        assert len(reader.calls) == 6
 
     asyncio.run(run())
 
@@ -83,19 +83,19 @@ def test_complete_backfill_and_rerun_skips_all_verified_chunks(db_engine: Engine
 def test_restart_resumes_from_finalized_database_checkpoint(db_engine: Engine) -> None:
     async def run() -> None:
         store = CandleStore(db_engine)
-        fail_second = 40 * STEP
+        fail_second = 100 * STEP
         reader = StubReader(fail_start=fail_second)
         history = PublicHistoryBackfill(reader, store, chunk_bars=20, pause_seconds=0)
         with pytest.raises(CandleGap, match="interruption"):
-            await history.run("BTCUSDT", "1h", bars=60)
+            await history.run("BTCUSDT", "1h", bars=120)
         assert (
-            store.history_readiness("BTCUSDT", "1h", 40 * STEP, required_bars=20)["status"]
+            store.history_readiness("BTCUSDT", "1h", 100 * STEP, required_bars=20)["status"]
             == "READY"
         )
         reader.fail_start = None
-        resumed = await history.run("BTCUSDT", "1h", bars=60)
+        resumed = await history.run("BTCUSDT", "1h", bars=120)
         assert resumed.reused_chunks == 1
-        assert resumed.created_bars == 40
+        assert resumed.created_bars == 100
         assert resumed.readiness == "READY"
 
     asyncio.run(run())
@@ -103,12 +103,12 @@ def test_restart_resumes_from_finalized_database_checkpoint(db_engine: Engine) -
 
 def test_missing_candle_causes_failure_without_ready_status(db_engine: Engine) -> None:
     async def run() -> None:
-        reader = StubReader(missing=25)
+        reader = StubReader(missing=85)
         store = CandleStore(db_engine)
         history = PublicHistoryBackfill(reader, store, chunk_bars=20, pause_seconds=0)
         with pytest.raises(CandleGap, match="incomplete chunk"):
-            await history.run("BTCUSDT", "1h", bars=60)
-        report = store.history_readiness("BTCUSDT", "1h", ANCHOR, required_bars=60)
+            await history.run("BTCUSDT", "1h", bars=120)
+        report = store.history_readiness("BTCUSDT", "1h", ANCHOR, required_bars=120)
         assert report["status"] != "READY"
 
     asyncio.run(run())
@@ -117,7 +117,7 @@ def test_missing_candle_causes_failure_without_ready_status(db_engine: Engine) -
 def test_conflicting_final_candle_is_never_silently_replaced(db_engine: Engine) -> None:
     async def run() -> None:
         store = CandleStore(db_engine)
-        store.upsert(closed(20, price=103))
+        store.upsert(closed(85, price=103))
         history = PublicHistoryBackfill(
             StubReader(),
             store,
@@ -125,7 +125,7 @@ def test_conflicting_final_candle_is_never_silently_replaced(db_engine: Engine) 
             pause_seconds=0,
         )
         with pytest.raises(CandleConflict):
-            await history.run("BTCUSDT", "1h", bars=60)
+            await history.run("BTCUSDT", "1h", bars=120)
 
     asyncio.run(run())
 
@@ -133,10 +133,10 @@ def test_conflicting_final_candle_is_never_silently_replaced(db_engine: Engine) 
 def test_strict_minimum_15m_reference_window(db_engine: Engine) -> None:
     async def run() -> None:
         history = PublicHistoryBackfill(StubReader(), CandleStore(db_engine))
-        with pytest.raises(ValueError, match="2901"):
-            await history.run("BTCUSDT", "15m", bars=2900)
-        with pytest.raises(ValueError):
-            await history.run("ETHUSDT", "1h", bars=5)
+        with pytest.raises(ValueError, match="2920"):
+            await history.run("BTCUSDT", "15m", bars=2919)
+        with pytest.raises(ValueError, match="120"):
+            await history.run("ETHUSDT", "1h", bars=119)
         with pytest.raises(ValueError):
             await history.run("SOLUSDT", "15m")
 
@@ -184,8 +184,8 @@ def test_public_http_transport_integration_with_all_expected_bars(db_engine: Eng
                 store,
                 chunk_bars=20,
                 pause_seconds=0,
-            ).run("BTCUSDT", "1h", bars=60)
-        assert report.fetched_bars == 60
+            ).run("BTCUSDT", "1h", bars=120)
+        assert report.fetched_bars == 120
         assert report.readiness == "READY"
 
     asyncio.run(run())
@@ -208,21 +208,21 @@ def test_partial_chunk_crash_resumes_without_duplicate_inserts(db_engine: Engine
         reader = StubReader()
         with pytest.raises(RuntimeError, match="halfway"):
             await PublicHistoryBackfill(reader, failing_store, chunk_bars=20, pause_seconds=0).run(
-                "BTCUSDT", "1h", bars=60
+                "BTCUSDT", "1h", bars=120
             )
         recovered_store = CandleStore(db_engine)
         assert (
-            recovered_store.history_readiness("BTCUSDT", "1h", 40 * STEP, required_bars=20)[
+            recovered_store.history_readiness("BTCUSDT", "1h", 100 * STEP, required_bars=20)[
                 "status"
             ]
             != "READY"
         )
         recovered = await PublicHistoryBackfill(
             reader, recovered_store, chunk_bars=20, pause_seconds=0
-        ).run("BTCUSDT", "1h", bars=60)
+        ).run("BTCUSDT", "1h", bars=120)
         assert recovered.readiness == "READY"
-        assert recovered.created_bars == 54
-        assert recovered.fetched_bars == 60
+        assert recovered.created_bars == 114
+        assert recovered.fetched_bars == 120
         assert recovered.reused_chunks == 0
 
     asyncio.run(run())

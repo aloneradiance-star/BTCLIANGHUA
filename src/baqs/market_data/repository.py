@@ -144,8 +144,14 @@ class CandleStore:
         start = datetime.fromtimestamp(start_ms / 1000, tz=UTC)
         end = datetime.fromtimestamp(anchored_end_ms / 1000, tz=UTC)
         with Session(self.engine) as session:
-            values = session.scalars(
-                select(Candle.open_time)
+            rows = session.execute(
+                select(
+                    Candle.open_time,
+                    Candle.close_time,
+                    Candle.quote_volume,
+                    Candle.trade_count,
+                    Candle.source,
+                )
                 .where(
                     Candle.symbol == symbol,
                     Candle.timeframe == timeframe,
@@ -155,15 +161,31 @@ class CandleStore:
                 )
                 .order_by(Candle.open_time)
             ).all()
-        times = [_milliseconds(value) for value in values]
+        times = [_milliseconds(open_time) for open_time, _, _, _, _ in rows]
+        invalid_close_count = sum(
+            _milliseconds(close_time) != _milliseconds(open_time) + step
+            for open_time, close_time, _, _, _ in rows
+        )
+        invalid_metadata_count = sum(
+            quote_volume is None
+            or not quote_volume.is_finite()
+            or quote_volume < 0
+            or type(trade_count) is not int
+            or trade_count < 0
+            or source not in {"REST", "WS"}
+            for _, _, quote_volume, trade_count, source in rows
+        )
         # Account for a stale final bar independently from warm-up completeness.
         last_available = self.latest_open_ms(symbol, timeframe)
         if last_available is None:
             status = "NO_DATA"
-        elif require_latest and last_available < anchored_end_ms - step:
+        elif require_latest and last_available != anchored_end_ms - step:
             status = "STALE"
-        elif len(times) == required_bars and all(
-            timestamp == start_ms + i * step for i, timestamp in enumerate(times)
+        elif (
+            len(times) == required_bars
+            and invalid_close_count == 0
+            and invalid_metadata_count == 0
+            and all(timestamp == start_ms + i * step for i, timestamp in enumerate(times))
         ):
             status = "READY"
         elif not times or times[0] > start_ms:
@@ -176,6 +198,8 @@ class CandleStore:
             "timeframe": timeframe,
             "required_bars": required_bars,
             "present_bars": len(times),
+            "invalid_close_count": invalid_close_count,
+            "invalid_metadata_count": invalid_metadata_count,
             "anchored_end_ms": anchored_end_ms,
             "earliest_expected_open_ms": start_ms,
             "last_expected_open_ms": anchored_end_ms - step,
