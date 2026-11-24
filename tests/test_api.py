@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
@@ -23,10 +24,29 @@ def client_for(engine: Engine) -> TestClient:
 
 def test_health_reports_no_execution(db_engine: Engine) -> None:
     client = client_for(db_engine)
-    data = client.get("/api/v1/health").json()
+    response = client.get("/api/v1/health")
+    data = response.json()
+    assert response.status_code == 200
+    assert data["status"] == "FOUNDATION_READY"
     assert data["database"] == "CONNECTED"
     assert data["execution_enabled"] is False
     assert data["market_data"] == "NOT_IMPLEMENTED"
+
+
+@pytest.mark.parametrize("drop_candles", [False, True], ids=["partial_schema", "empty_database"])
+def test_health_rejects_missing_schema(db_engine: Engine, drop_candles: bool) -> None:
+    RegimeSnapshot.__table__.drop(db_engine)
+    if drop_candles:
+        Candle.__table__.drop(db_engine)
+
+    response = client_for(db_engine).get("/api/v1/health")
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "DEGRADED",
+        "database": "UNAVAILABLE",
+        "market_data": "NOT_IMPLEMENTED",
+        "execution_enabled": False,
+    }
 
 
 def test_absent_regimes_unavailable(db_engine: Engine) -> None:

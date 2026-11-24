@@ -29,6 +29,8 @@ access/error logging keeps the server's own logging configuration.
 
 The database begins empty; **market ingestion is Issue #2**, and regimes are Issue #4.
 On empty data, endpoints must report unavailable data, not fabricated signals.
+The health endpoint returns `503 DEGRADED` if it cannot read the required
+schema. An initialized database with no market data can report `FOUNDATION_READY`.
 
 ## Docker development
 ```bash

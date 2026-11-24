@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import cast
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
-from sqlalchemy import Engine, select, text
+from sqlalchemy import Engine, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -52,7 +52,8 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
     def health(request: Request, response: Response) -> dict[str, object]:
         try:
             with _engine(request).connect() as conn:
-                conn.execute(text("SELECT 1"))
+                conn.execute(select(Candle).limit(0))
+                conn.execute(select(RegimeSnapshot).limit(0))
         except (SQLAlchemyError, ImportError, OSError):
             response.status_code = 503
             return {
