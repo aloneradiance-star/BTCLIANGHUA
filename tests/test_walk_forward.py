@@ -95,7 +95,10 @@ def test_fold_windows_are_equal_adjacent_and_half_open() -> None:
     assert len(windows) == 3
     assert windows[0].start_ms == START
     assert windows[-1].end_ms == END
-    assert all(left.end_ms == right.start_ms for left, right in zip(windows, windows[1:], strict=False))
+    assert all(
+        left.end_ms == right.start_ms
+        for left, right in zip(windows, windows[1:], strict=False)
+    )
     assert all(window.end_ms - window.start_ms == DAY for window in windows)
 
 
