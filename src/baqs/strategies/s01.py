@@ -190,7 +190,7 @@ class S01TrendPullbackStrategy:
         features15 = compute_features(bars15)
         features1h = compute_features(bars1h)
         close_times = [feature.close_ms for feature in features1h]
-        if any(right <= left for left, right in zip(close_times, close_times[1:])):
+        if any(right <= left for left, right in zip(close_times, close_times[1:], strict=False)):
             raise ValueError("1h features must be strictly increasing")
 
         signals: list[EntrySignal] = []
