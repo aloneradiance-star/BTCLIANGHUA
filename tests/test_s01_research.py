@@ -183,26 +183,39 @@ def test_missing_execution_minute_returns_unavailable(db_engine: Engine) -> None
 
 
 @pytest.mark.parametrize(
-    ("column", "reason"),
-    [("quote_volume", "1M_MISSING_QUOTE_VOLUME"), ("trade_count", "1M_MISSING_TRADE_COUNT")],
+    ("timeframe", "column", "reason"),
+    [
+        ("1m", "quote_volume", "1M_MISSING_QUOTE_VOLUME"),
+        ("1m", "trade_count", "1M_MISSING_TRADE_COUNT"),
+        ("15m", "quote_volume", "15M_MISSING_QUOTE_VOLUME"),
+        ("15m", "trade_count", "15M_MISSING_TRADE_COUNT"),
+        ("1h", "quote_volume", "1H_MISSING_QUOTE_VOLUME"),
+        ("1h", "trade_count", "1H_MISSING_TRADE_COUNT"),
+    ],
 )
 def test_missing_execution_metadata_is_not_synthesized(
     db_engine: Engine,
+    timeframe: str,
     column: str,
     reason: str,
 ) -> None:
     seed_history(db_engine)
     seed_funding(db_engine)
-    values = {column: None}
+    step = {"1m": MINUTE, "15m": QUARTER, "1h": HOUR}[timeframe]
+    open_ms = {
+        "1m": START,
+        "15m": START - 2920 * QUARTER,
+        "1h": START - 120 * HOUR,
+    }[timeframe]
     with Session(db_engine) as session:
         session.execute(
             update(Candle)
             .where(
                 Candle.symbol == "BTCUSDT",
-                Candle.timeframe == "1m",
-                Candle.open_time == candle("BTCUSDT", "1m", START, step=MINUTE).open_time,
+                Candle.timeframe == timeframe,
+                Candle.open_time == candle("BTCUSDT", timeframe, open_ms, step=step).open_time,
             )
-            .values(**values)
+            .values(**{column: None})
         )
         session.commit()
     report = service(db_engine).run("BTCUSDT", START, END)
