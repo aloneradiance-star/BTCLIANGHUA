@@ -40,7 +40,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--bars",
         type=int,
-        help="Defaults: 43200 (1m), 2920 (15m), 120 (1h); 90-day caps: 129600, 8640, 2160",
+        help=(
+            f"Defaults: 43200 (1m), 2920 (15m), 120 (1h); 90-day caps: "
+            f"1m={MAX_BARS_BY_TIMEFRAME['1m']}, "
+            f"15m={MAX_BARS_BY_TIMEFRAME['15m']}, "
+            f"1h={MAX_BARS_BY_TIMEFRAME['1h']}"
+        ),
     )
     parser.add_argument(
         "--start-ms",

@@ -20,7 +20,7 @@ MINIMUM_BARS = {"1m": 1, "15m": MIN_15M_BARS, "1h": MIN_1H_BARS}
 MAX_BACKFILL_DAYS = 90
 MAX_BACKFILL_BARS = 129_600  # Absolute 1m cap; per-timeframe limits are below.
 MAX_BARS_BY_TIMEFRAME = {
-    timeframe: MAX_BACKFILL_DAYS * 24 * 60 // (step // 60_000)
+    timeframe: min(MAX_BACKFILL_BARS, MAX_BACKFILL_DAYS * 24 * 60 // (step // 60_000))
     for timeframe, step in INTERVAL_MS.items()
     if timeframe in DEFAULT_BARS
 }
