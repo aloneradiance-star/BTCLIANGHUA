@@ -1,8 +1,8 @@
 """Phase-1 guard against private Binance USD-M and authenticated API usage."""
 
 import ast
-import re
 from pathlib import Path
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -49,7 +49,10 @@ def private_api_violations(source: str, filename: str = "<source>") -> list[str]
                 if isinstance(node, ast.Import)
                 else [node.module.lower() if node.module else ""]
             )
-            if any(name == "hmac" or name == "binance" or name.startswith("binance.") for name in imported):
+            if any(
+                name == "hmac" or name == "binance" or name.startswith("binance.")
+                for name in imported
+            ):
                 violations.append(f"authenticated/private client import at line {node.lineno}")
 
         if isinstance(node, ast.Name) and node.id.lower() in _SECRET_NAMES:
@@ -68,7 +71,9 @@ def private_api_violations(source: str, filename: str = "<source>") -> list[str]
                 violations.append(f"private USD-M endpoint literal at line {node.lineno}")
             if _API_KEY_HEADER.search(literal):
                 violations.append(f"Binance API-key header literal at line {node.lineno}")
-            if literal.lower() == "signature" or re.search(r"[?&]signature=", literal, re.IGNORECASE):
+            if literal.lower() == "signature" or re.search(
+                r"[?&]signature=", literal, re.IGNORECASE
+            ):
                 violations.append(f"request-signature literal at line {node.lineno}")
             if literal.lower() in {"listenkey", "userdata", "userdatastream"}:
                 violations.append(f"user-data-stream literal at line {node.lineno}")
@@ -98,7 +103,7 @@ def test_no_exchange_secrets_or_execution_module() -> None:
             f"{path.relative_to(root)}: {item}"
             for item in private_api_violations(path.read_text(encoding="utf-8"), str(path))
         )
-    assert not violations, "\\n".join(violations)
+    assert not violations, "\n".join(violations)
 
 
 @pytest.mark.parametrize(
@@ -115,6 +120,7 @@ def test_no_exchange_secrets_or_execution_module() -> None:
         "api_key = token",
         "api_secret = secret",
         "signature = value",
+        "PARAMS = {'signature': value}",
         "import hmac",
         "from hmac import new",
         "API_KEY = token",
