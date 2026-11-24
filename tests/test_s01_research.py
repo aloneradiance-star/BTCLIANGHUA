@@ -7,9 +7,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from baqs.backtest.engine import EntrySignal
+from baqs.backtest.engine import CostModel, EntrySignal
 from baqs.backtest.research import S01ResearchService, report_json
-from baqs.backtest.engine import CostModel
 from baqs.market_data.funding import FundingStore
 from baqs.market_data.repository import CandleStore
 from baqs.market_data.schema import FinalCandle, FundingRateRecord
