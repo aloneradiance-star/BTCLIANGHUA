@@ -225,3 +225,24 @@ def test_untrusted_source_invalidates_readiness(db_engine: Engine) -> None:
     report = store.history_readiness("BTCUSDT", "1h", 4 * STEP, required_bars=3)
     assert report["status"] == "GAP"
     assert report["invalid_metadata_count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("timeframe", "step", "maximum"),
+    [
+        ("1m", 60_000, 129_600),
+        ("5m", 300_000, 25_920),
+        ("15m", 900_000, 8_640),
+        ("1h", 3_600_000, 2_160),
+    ],
+)
+def test_history_readiness_enforces_per_timeframe_90_day_cap(
+    db_engine: Engine, timeframe: str, step: int, maximum: int
+) -> None:
+    with pytest.raises(ValueError, match=f"1..{maximum}"):
+        CandleStore(db_engine).history_readiness(
+            "BTCUSDT",
+            timeframe,
+            (maximum + 1) * step,
+            required_bars=maximum + 1,
+        )

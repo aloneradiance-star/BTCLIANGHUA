@@ -11,6 +11,11 @@ from baqs.market_data.schema import INTERVAL_MS, CandleConflict, FinalCandle
 from baqs.models import Candle
 
 StoreResult = Literal["CREATED", "DUPLICATE", "PROMOTED"]
+MAX_HISTORY_DAYS = 90
+MAX_HISTORY_BARS_BY_TIMEFRAME = {
+    timeframe: MAX_HISTORY_DAYS * 24 * 60 // (step // 60_000)
+    for timeframe, step in INTERVAL_MS.items()
+}
 
 
 def _milliseconds(value: datetime) -> int:
@@ -140,14 +145,17 @@ class CandleStore:
         if symbol not in {"BTCUSDT", "ETHUSDT"} or timeframe not in INTERVAL_MS:
             raise ValueError("Unknown research feed")
         step = INTERVAL_MS[timeframe]
+        maximum = MAX_HISTORY_BARS_BY_TIMEFRAME[timeframe]
         if (
             type(required_bars) is not int
-            or not 1 <= required_bars <= 129_600
+            or not 1 <= required_bars <= maximum
             or type(anchored_end_ms) is not int
             or anchored_end_ms < required_bars * step
             or anchored_end_ms % step
         ):
-            raise ValueError("Historical readiness requires 1..129600 interval-aligned bars")
+            raise ValueError(
+                f"Historical readiness requires 1..{maximum} {timeframe} interval-aligned bars"
+            )
         start_ms = anchored_end_ms - required_bars * step
         start = datetime.fromtimestamp(start_ms / 1000, tz=UTC)
         end = datetime.fromtimestamp(anchored_end_ms / 1000, tz=UTC)
