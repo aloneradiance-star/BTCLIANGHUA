@@ -159,7 +159,9 @@ def test_walk_forward_cost_sensitivity_is_deterministic_and_read_only(
     assert len(first.cells) == 6
     assert first.aggregate_by_scenario["low"]["trade_counts_by_fold"] == [1, 1, 1]
     assert first.aggregate_by_scenario["stress"]["trade_counts_by_fold"] == [1, 1, 1]
-    assert first.aggregate_by_scenario["low"]["net_pnl"] > first.aggregate_by_scenario["stress"]["net_pnl"]
+    low_net = first.aggregate_by_scenario["low"]["net_pnl"]
+    stress_net = first.aggregate_by_scenario["stress"]["net_pnl"]
+    assert low_net > stress_net
     assert walk_forward_report_json(first) == walk_forward_report_json(second)
     assert _table_counts(db_engine) == before
 
@@ -168,7 +170,10 @@ def test_walk_forward_refuses_to_call_too_few_trades_robust(
     db_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _seed_walk_forward(db_engine)
-    monkeypatch.setattr(S01TrendPullbackStrategy, "generate_signals", lambda self, bars15, bars1h: [])
+    def no_signals(self, bars15, bars1h):
+        return []
+
+    monkeypatch.setattr(S01TrendPullbackStrategy, "generate_signals", no_signals)
     report = WalkForwardResearchService(
         db_engine,
         cost_scenarios=[

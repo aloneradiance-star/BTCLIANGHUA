@@ -29,7 +29,9 @@ class CostScenario:
     def __post_init__(self) -> None:
         if not self.name or self.name.strip() != self.name or len(self.name) > 32:
             raise ValueError("Cost scenario name must be a nonempty, trimmed label of <=32 chars")
-        if not isinstance(self.taker_fee_bps, Decimal) or not isinstance(self.slippage_bps, Decimal):
+        if not isinstance(self.taker_fee_bps, Decimal) or not isinstance(
+            self.slippage_bps, Decimal
+        ):
             raise ValueError("Cost scenario assumptions must be Decimal values")
         CostModel(self.taker_fee_bps, self.slippage_bps)
 
@@ -139,7 +141,10 @@ def _aggregate_scenario(
     durations = [fold.end_ms - fold.start_ms for fold in folds]
     total_duration = sum(durations)
     exposure = sum(
-        (metric.exposure_fraction * Decimal(duration) for metric, duration in zip(metrics, durations, strict=True)),
+        (
+            metric.exposure_fraction * Decimal(duration)
+            for metric, duration in zip(metrics, durations, strict=True)
+        ),
         ZERO,
     ) / Decimal(total_duration)
     trade_counts = [metric.trade_count for metric in metrics]
