@@ -242,10 +242,7 @@ class RegimeResearchService:
                 gate_state = GateState.from_dict(last.features.get("gate_state"))
             except ValueError:
                 return {"status": "UNAVAILABLE", "reason": "CORRUPT_PERSISTED_GATE_STATE"}
-            if (
-                gate_state.last_processed_ms != close_ms
-                or gate_state.current != last.regime
-            ):
+            if gate_state.last_processed_ms != close_ms or gate_state.current != last.regime:
                 return {"status": "UNAVAILABLE", "reason": "GATE_STATE_SNAPSHOT_MISMATCH"}
             for timeframe, count in REQUIRED.items():
                 end = clock_ms // INTERVAL_MS[timeframe] * INTERVAL_MS[timeframe]

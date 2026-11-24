@@ -168,7 +168,6 @@ def test_regime_api_is_read_only_and_stale_snapshots_unavailable(full_history: E
         )
 
 
-
 def test_missing_quote_volume_metadata_fails_closed(full_history: Engine) -> None:
     target_open = datetime.fromtimestamp(
         (ANCHOR_MS - 100 * FIFTEEN_MIN) / 1000,
@@ -233,7 +232,6 @@ def test_corrupt_gate_state_fails_closed_on_latest_and_duplicate(full_history: E
     assert latest["reason"] == "CORRUPT_PERSISTED_GATE_STATE"
     with pytest.raises(RegimeUnavailable, match="CORRUPT_PERSISTED_GATE_STATE"):
         service.observe("BTCUSDT", close_ms=ANCHOR_MS, clock_ms=ANCHOR_MS + 1000)
-
 
 
 def test_ready_history_without_snapshot_is_still_unavailable(full_history: Engine) -> None:

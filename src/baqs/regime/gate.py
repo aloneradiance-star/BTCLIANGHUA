@@ -50,8 +50,7 @@ class GateState:
             or (last_switch is not None and last_switch % FIVE_MIN_MS != 0)
             or (last_processed is not None and last_processed % FIVE_MIN_MS != 0)
             or (
-                last_switch is not None
-                and (last_processed is None or last_switch > last_processed)
+                last_switch is not None and (last_processed is None or last_switch > last_processed)
             )
             or (pending is None and confirms != 0)
             or (

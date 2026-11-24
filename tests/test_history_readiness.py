@@ -187,7 +187,6 @@ def test_wrong_exclusive_close_boundary_invalidates_readiness(db_engine: Engine)
     assert report["invalid_close_count"] == 1
 
 
-
 def test_missing_required_metadata_invalidates_readiness(db_engine: Engine) -> None:
     store = CandleStore(db_engine)
     for i in (1, 2, 3):
