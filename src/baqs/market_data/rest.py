@@ -11,6 +11,7 @@ from baqs.market_data.schema import (
     SYMBOLS,
     CandleGap,
     FinalCandle,
+    FundingGap,
     FundingRateRecord,
     InvalidCandle,
     MarketDataError,
@@ -166,7 +167,7 @@ class PublicFuturesREST:
                     item.funding_time_ms < cursor or item.funding_time_ms >= end_ms
                     or item.funding_time_ms < previous_time or key in seen_keys
                 ):
-                    raise CandleGap("Funding events are duplicated, out of order or out of range")
+                    raise FundingGap("Funding events are duplicated, out of order or out of range")
                 seen_keys.add(key)
                 previous_time = item.funding_time_ms
                 result.append(item)
@@ -176,10 +177,15 @@ class PublicFuturesREST:
             boundary_time = page[-1].funding_time_ms
             boundary_response = await self._request(
                 "/fapi/v1/fundingRate",
-                {"symbol": symbol, "startTime": boundary_time, "endTime": boundary_time, "limit": 1000},
+                {
+                    "symbol": symbol,
+                    "startTime": boundary_time,
+                    "endTime": boundary_time,
+                    "limit": 1000,
+                },
             )
             if not isinstance(boundary_response, list) or len(boundary_response) >= 1000:
-                raise CandleGap("Funding pagination boundary is ambiguous")
+                raise FundingGap("Funding pagination boundary is ambiguous")
             boundary_events = [from_funding_row(symbol, row) for row in boundary_response]
             boundary_keys = {(item.funding_time_ms, item.rate_type) for item in boundary_events}
             page_boundary_keys = {
@@ -187,12 +193,12 @@ class PublicFuturesREST:
                 for item in page if item.funding_time_ms == boundary_time
             }
             if len(boundary_keys) != len(boundary_events) or boundary_keys != page_boundary_keys:
-                raise CandleGap("Funding page split events sharing one funding timestamp")
+                raise FundingGap("Funding page split events sharing one funding timestamp")
             cursor = boundary_time + 1
             if cursor >= end_ms:
                 return result
             if page_index + 1 >= max_pages:
-                raise CandleGap("Funding history exceeded bounded page budget")
+                raise FundingGap("Funding history exceeded bounded page budget")
             if pause_seconds:
                 await asyncio.sleep(pause_seconds)
-        raise CandleGap("Funding history exceeded bounded page budget")
+        raise FundingGap("Funding history exceeded bounded page budget")
