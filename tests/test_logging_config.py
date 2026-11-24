@@ -54,6 +54,7 @@ def test_application_startup_emits_json_and_preserves_uvicorn(db_engine, capsys)
         baqs_logger.setLevel(original_baqs_level)
         baqs_logger.propagate = original_baqs_propagate
 
+
 def test_configure_logging_is_idempotent_and_does_not_reset_uvicorn() -> None:
     uvicorn_loggers = (
         logging.getLogger("uvicorn.error"),
