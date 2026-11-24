@@ -126,3 +126,42 @@ class FundingCoverageRecord(Base):
     completed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class FundingEventRecord(Base):
+    """Exact public funding history; mark_price is the exchange's charge-time mark."""
+
+    __tablename__ = "funding_events"
+    __table_args__ = (
+        UniqueConstraint("symbol", "funding_time_ms", name="uq_funding_symbol_time"),
+        CheckConstraint("mark_price > 0", name="funding_mark_positive"),
+        CheckConstraint("rate_type IN ('Regular','Special')", name="funding_rate_type"),
+        Index("ix_funding_recent", "symbol", "funding_time_ms"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False)
+    funding_time_ms: Mapped[int] = mapped_column(nullable=False)
+    funding_rate: Mapped[Decimal] = mapped_column(Numeric(28, 18), nullable=False)
+    mark_price: Mapped[Decimal] = mapped_column(Numeric(28, 12), nullable=False)
+    rate_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="BINANCE_PUBLIC_REST")
+
+
+class FundingCoverageManifest(Base):
+    """A range is READY only after pagination exhaustion and exact persisted timestamp match."""
+
+    __tablename__ = "funding_coverage_manifests"
+    __table_args__ = (
+        UniqueConstraint("symbol", "start_ms", "end_ms", name="uq_funding_coverage_window"),
+        CheckConstraint("end_ms > start_ms", name="funding_window_positive"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False)
+    start_ms: Mapped[int] = mapped_column(nullable=False)
+    end_ms: Mapped[int] = mapped_column(nullable=False)
+    expected_timestamps_ms: Mapped[list[int]] = mapped_column(json_type, nullable=False)
+    complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source_exhausted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
