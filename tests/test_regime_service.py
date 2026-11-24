@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, func, insert, select
+from sqlalchemy import Engine, func, insert, select, update
 from sqlalchemy.orm import Session
 
 from baqs.api import create_app
@@ -58,7 +58,9 @@ def test_no_sufficient_data_is_unavailable_not_transition(db_engine: Engine) -> 
     service = RegimeResearchService(db_engine)
     with pytest.raises(RegimeUnavailable, match="5M_HISTORY"):
         service.observe("BTCUSDT", close_ms=ANCHOR_MS, clock_ms=ANCHOR_MS + 1)
-    assert service.latest("BTCUSDT", clock_ms=ANCHOR_MS)["status"] == "UNAVAILABLE"
+    latest = service.latest("BTCUSDT", clock_ms=ANCHOR_MS)
+    assert latest["status"] == "UNAVAILABLE"
+    assert latest["reason"] == "5M_HISTORY_NO_DATA"
 
 
 def test_end_to_end_range_switch_requires_three_5m_closes(full_history: Engine) -> None:
@@ -83,6 +85,12 @@ def test_end_to_end_range_switch_requires_three_5m_closes(full_history: Engine) 
     assert all(out["features"]["signal_allowed"] is False for out in outputs)
     assert outputs[-1]["features"]["gate_state"]["confirmations"] == 0
     assert "STATE_SWITCH_CONFIRMED" in outputs[-1]["reasons"]
+    latest = service.latest(
+        "BTCUSDT",
+        clock_ms=ANCHOR_MS + 2 * FIVE_MIN + 1000,
+    )
+    assert latest["status"] == "READY"
+    assert latest["regime"] == "RANGE"
 
     # Same as-of observation cannot create a second snapshot or double advance.
     again = service.observe(
@@ -158,3 +166,78 @@ def test_regime_api_is_read_only_and_stale_snapshots_unavailable(full_history: E
             list(operations) == ["get"]
             for operations in client.get("/openapi.json").json()["paths"].values()
         )
+
+
+def test_missing_quote_volume_metadata_fails_closed(full_history: Engine) -> None:
+    target_open = datetime.fromtimestamp(
+        (ANCHOR_MS - 100 * FIFTEEN_MIN) / 1000,
+        tz=UTC,
+    )
+    with full_history.begin() as connection:
+        connection.execute(
+            update(Candle)
+            .where(
+                Candle.symbol == "BTCUSDT",
+                Candle.timeframe == "15m",
+                Candle.open_time == target_open,
+            )
+            .values(quote_volume=None)
+        )
+    with pytest.raises(RegimeUnavailable, match="15M_HISTORY_GAP"):
+        RegimeResearchService(full_history).observe(
+            "BTCUSDT",
+            close_ms=ANCHOR_MS,
+            clock_ms=ANCHOR_MS + 1,
+        )
+
+
+def test_untrusted_candle_source_fails_closed(full_history: Engine) -> None:
+    target_open = datetime.fromtimestamp(
+        (ANCHOR_MS - 100 * FIFTEEN_MIN) / 1000,
+        tz=UTC,
+    )
+    with full_history.begin() as connection:
+        connection.execute(
+            update(Candle)
+            .where(
+                Candle.symbol == "BTCUSDT",
+                Candle.timeframe == "15m",
+                Candle.open_time == target_open,
+            )
+            .values(source="FIXTURE")
+        )
+    with pytest.raises(RegimeUnavailable, match="15M_HISTORY_GAP"):
+        RegimeResearchService(full_history).observe(
+            "BTCUSDT",
+            close_ms=ANCHOR_MS,
+            clock_ms=ANCHOR_MS + 1,
+        )
+
+
+def test_corrupt_gate_state_fails_closed_on_latest_and_duplicate(full_history: Engine) -> None:
+    service = RegimeResearchService(full_history)
+    service.observe("BTCUSDT", close_ms=ANCHOR_MS, clock_ms=ANCHOR_MS + 1)
+    with Session(full_history) as session:
+        snapshot = session.scalar(select(RegimeSnapshot))
+        assert snapshot is not None
+        features = dict(snapshot.features)
+        gate_state = dict(features["gate_state"])
+        gate_state["last_processed_ms"] = 1
+        features["gate_state"] = gate_state
+        snapshot.features = features
+        session.commit()
+
+    latest = service.latest("BTCUSDT", clock_ms=ANCHOR_MS + 1000)
+    assert latest["status"] == "UNAVAILABLE"
+    assert latest["reason"] == "CORRUPT_PERSISTED_GATE_STATE"
+    with pytest.raises(RegimeUnavailable, match="CORRUPT_PERSISTED_GATE_STATE"):
+        service.observe("BTCUSDT", close_ms=ANCHOR_MS, clock_ms=ANCHOR_MS + 1000)
+
+
+def test_ready_history_without_snapshot_is_still_unavailable(full_history: Engine) -> None:
+    latest = RegimeResearchService(full_history).latest(
+        "BTCUSDT",
+        clock_ms=ANCHOR_MS + 2 * FIVE_MIN + 1000,
+    )
+    assert latest["status"] == "UNAVAILABLE"
+    assert latest["reason"] == "NO_CLASSIFICATION"

@@ -20,8 +20,17 @@ alembic upgrade head
 uvicorn baqs.api:app --reload
 ```
 Open `http://127.0.0.1:8000/docs`. API endpoints are read-only:
-`GET /api/v1/health`, `GET /api/v1/market/candles`, and `GET /api/v1/market/regimes`.
-The database begins empty. Public market ingestion is implemented in Issue #2, and market classification remains Issue #4.
+`GET /api/v1/health`, `GET /api/v1/market/health`,
+`GET /api/v1/market/history-readiness`, `GET /api/v1/market/candles`, and
+`GET /api/v1/market/regimes?timeframe=5m`. The regime endpoint defaults to
+`5m`, accepts `1m`, `5m`, `15m`, or `1h`, and only returns a snapshot for
+the requested timeframe; a missing timeframe is explicitly `UNAVAILABLE`.
+Application logs in the `baqs` namespace are JSON lines on stderr. Uvicorn
+access/error logging keeps the server's own logging configuration.
+
+The database begins empty. Public market ingestion is implemented in Issue #2,
+historical coverage is gated by Issue #9, and market classification remains Issue #4.
+The history-readiness endpoint reports candle coverage only, not alpha or trading signals.
 On empty data, endpoints must report unavailable data, not fabricated signals.
 
 ## Opt-in public Binance market collector
@@ -29,12 +38,12 @@ After `alembic upgrade head`, in a separate process run:
 ```bash
 python -m baqs.market_data.runner
 ```
-Only public REST time/klines and public WebSocket `/market/stream` are used. This
-research collector is **not enabled automatically** by the API server. See
-`docs/P1-02_PUBLIC_DATA.md` for finalized-candle rules, gap repair and limitations.
-The additional read-only endpoint `GET /api/v1/market/health` reports data
-staleness and gaps. With no recent data, `GET /api/v1/health` returns HTTP 503;
-the database can be connected while the market feed remains unhealthy.
+Only public REST time/klines and public WebSocket `/market/stream` are used.
+This research collector is **not enabled automatically** by the API server.
+See `docs/P1-02_PUBLIC_DATA.md` for finalized-candle rules, gap repair and
+limitations. The `GET /api/v1/market/health` endpoint reports data staleness
+and gaps. With no recent data, `GET /api/v1/health` returns HTTP 503; the
+database can be connected while the market feed remains unhealthy.
 
 ## Docker development
 ```bash
@@ -56,7 +65,7 @@ BAQS_DATABASE_URL=sqlite:////tmp/baqs-migration-smoke.db alembic upgrade head
 ```
 
 ## Engineering
-See `AGENTS.md`, `docs/PHASE1_CODEX_BRIEF.md` and Issue #1. Schema migrations live in `migrations/`. Later phases will add deterministic indicators and state classification. A real-money phase requires separate risk, compliance and user authorization gates.
+See `AGENTS.md`, `docs/PHASE1_CODEX_BRIEF.md` and Issue #1. Schema migrations live in `migrations/`. Phase 1 now includes public REST/WebSocket ingestion, deterministic indicators and a research-only six-state classifier. A real-money phase requires separate risk, compliance and user authorization gates.
 
 ## Phase 1 / Six-state market regime (Issue #4)
 After completing the **explicit public 30-day backfill** (see
@@ -69,8 +78,9 @@ Optional continuous research-only polling:
 ```bash
 python -m baqs.regime.runner --poll-seconds 15
 ```
-`GET /api/v1/market/regimes` returns the latest verified research snapshot
-or `UNAVAILABLE` with a reason when candles are missing/stale. Output is
+`GET /api/v1/market/regimes?timeframe=5m` returns the latest verified
+research state or `UNAVAILABLE` with a reason when candles are missing/stale.
+Other supported timeframe values expose historical snapshots only. Output is
 **not** a trade order, not a calibrated probability and not an investment
 recommendation. See `docs/P1-04_REGIME_CLASSIFIER.md`.
 
@@ -81,9 +91,9 @@ P2-01 adds a pure Decimal event-driven simulator and the research-only
 Signals use completed 15m/1h bars and may fill no earlier than the next 1m
 open. Fee, adverse slippage and a complete funding-event manifest are required.
 No HTTP write endpoint, private exchange API, live order or leverage is present.
-P1-02A does not yet provide historical 1m execution bars or historical funding
-and mark-price events; use synthetic fixtures until the public-data follow-up
-is complete. A CI pass is not a profitability result.
+P1-02A provides public 15m/1h history; P2-02 adds explicit 1m execution
+bars and historical funding/mark-price events for backtests, subject to the
+backtest-readiness gate. A CI pass is not a profitability result.
 
 ## P2-02 / Public historical backtest data
 

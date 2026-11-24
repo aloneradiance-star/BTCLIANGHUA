@@ -73,3 +73,21 @@ def test_duplicate_and_out_of_order_closes_rejected() -> None:
         advance(state, "RANGE", FIVE_MIN_MS)
     with pytest.raises(ValueError):
         advance(state, "RANGE", 0)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"pending": None},
+        {"confirmations": 0},
+        {"pending": "HIGH_RISK"},
+        {"last_processed_ms": 3 * FIVE_MIN_MS + 1},
+        {"last_switch_ms": 4 * FIVE_MIN_MS},
+        {"last_switch_ms": None},
+    ],
+)
+def test_inconsistent_persisted_gate_state_fails_closed(changes: dict[str, object]) -> None:
+    raw = GateState("BEAR_TREND", "RANGE", 2, FIVE_MIN_MS, 3 * FIVE_MIN_MS).as_dict()
+    raw.update(changes)
+    with pytest.raises(ValueError):
+        GateState.from_dict(raw)

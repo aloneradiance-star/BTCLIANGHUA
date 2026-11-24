@@ -13,9 +13,10 @@ from baqs.market_data.repository import CandleStore
 from baqs.market_data.schema import INTERVAL_MS, SYMBOLS, CandleGap, FinalCandle
 
 logger = logging.getLogger(__name__)
-MIN_15M_BARS = 2901  # First 30-day realized-vol percentile at index 2900.
+MIN_15M_BARS = 2920  # Operational minimum includes the classifier warm-up buffer.
+MIN_1H_BARS = 120  # Classifier readiness uses a 120-bar 1h buffer.
 DEFAULT_BARS = {"1m": 43_200, "15m": 2920, "1h": 120}
-MINIMUM_BARS = {"1m": 1, "15m": MIN_15M_BARS, "1h": 60}
+MINIMUM_BARS = {"1m": 1, "15m": MIN_15M_BARS, "1h": MIN_1H_BARS}
 MAX_BACKFILL_BARS = 50_000
 
 
