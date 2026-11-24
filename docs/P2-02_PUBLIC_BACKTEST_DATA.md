@@ -17,7 +17,7 @@ subscribe to private user streams, submit orders, or start automatically.
   `rateType` (`Regular` or `Special`). The associated mark price is used
   directly; do not substitute spot price, contract close, or mark-price Kline.
 - Funding history shares a documented 500 requests / 5 minutes / IP limit
-  with `/fapi/v1/fundingInfo`. The client uses a one-second inter-page pause,
+  with `/fapi/v1/fundingInfo`. The client uses a 1.25-second inter-page pause,
   bounded pagination, exponential retry, and honours numeric `Retry-After`
   values on HTTP 429.
 - A full-page boundary is queried at its exact timestamp before advancing.
