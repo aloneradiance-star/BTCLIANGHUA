@@ -37,7 +37,24 @@ The offline collector-flow test starts a loopback WebSocket and mocks public RES
 It exercises normal closure, an abnormal closure and a simulated six-hour gap,
 then checks exact persisted coverage for all eight feeds.
 
-`GET /api/v1/market/health` exposes per-feed health read from database. `GET /api/v1/market/candles` returns finalized bars only. No price predictions or trades are returned.
+`GET /api/v1/market/health` exposes per-feed candle quality and a separate
+`collector` object for the combined public connection. The collector records
+receipt of a processed text frame in PostgreSQL after reconnect reconciliation
+completes, then refreshes the timestamp at most every five seconds. Closure
+or a handled failure clears the timestamp. A silent socket is retried after 30
+seconds without a frame, and the API treats a receipt 30 seconds old as stale
+even if the process stopped without clearing it. Overall readiness requires
+`collector.status == "CONNECTED"` and eight ready candle feeds.
+
+A clean database reports `NOT_STARTED`. After the first connection attempt,
+the collector reports `DISCONNECTED` until it processes a frame after
+reconciliation. A lapsed or future receipt reports `STALE`.
+
+Migration `0002_market_stream` adds the collector state table. Apply it with
+`alembic upgrade head` before starting the API and collector. Downgrading to
+`0001_public` removes collector state and preserves candles and regime snapshots.
+
+`GET /api/v1/market/candles` returns finalized bars only. No price predictions or trades are returned.
 
 ## API references (reviewed November 2026)
 - https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data

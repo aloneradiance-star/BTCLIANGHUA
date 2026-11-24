@@ -41,9 +41,10 @@ python -m baqs.market_data.runner
 Only public REST time/klines and public WebSocket `/market/stream` are used.
 This research collector is **not enabled automatically** by the API server.
 See `docs/P1-02_PUBLIC_DATA.md` for finalized-candle rules, gap repair and
-limitations. The `GET /api/v1/market/health` endpoint reports data staleness
-and gaps. With no recent data, `GET /api/v1/health` returns HTTP 503; the
-database can be connected while the market feed remains unhealthy.
+limitations. The `GET /api/v1/market/health` endpoint reports the collector
+connection status and per-feed candle quality. `GET /api/v1/health` returns
+HTTP 503 when the collector is unavailable or any feed has missing, stale
+or gapped data.
 
 ## Docker development
 ```bash
@@ -65,4 +66,4 @@ BAQS_DATABASE_URL=sqlite:////tmp/baqs-migration-smoke.db alembic upgrade head
 ```
 
 ## Engineering
-See `AGENTS.md`, `docs/PHASE1_CODEX_BRIEF.md` and Issue #1. Schema migrations live in `migrations/`. Later phases will add public REST/WebSocket ingestion, deterministic indicators and state classification. A real-money phase requires separate risk, compliance and user authorization gates.
+See `AGENTS.md`, `docs/PHASE1_CODEX_BRIEF.md` and Issue #1. Schema migrations live in `migrations/`. The next Phase 1 work adds deterministic indicators and state classification. A real-money phase requires separate risk, compliance and user authorization gates.

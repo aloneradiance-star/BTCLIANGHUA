@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from websockets.asyncio.server import ServerConnection, serve
 
 from baqs.market_data import runner
-from baqs.market_data.repository import CandleStore
+from baqs.market_data.repository import CandleStore, MarketStreamStore
 from baqs.market_data.schema import INTERVAL_MS, SYMBOLS
 from baqs.models import Candle
 from baqs.settings import Settings
@@ -63,6 +63,7 @@ def test_collector_recovers_all_feeds_after_websocket_closures(
         clock_ms = ANCHOR
         connection_index = -1
         store = CandleStore(db_engine)
+        stream_store = MarketStreamStore(db_engine)
         client = httpx.AsyncClient
 
         def respond(request: httpx.Request) -> httpx.Response:
@@ -70,6 +71,8 @@ def test_collector_recovers_all_feeds_after_websocket_closures(
             assert "x-mbx-apikey" not in request.headers and "signature" not in request.url.params
             now_ms = clock_ms
             if request.url.path == "/fapi/v1/time":
+                if not last_feed_requested[now_ms].is_set():
+                    assert stream_store.health()["status"] == "DISCONNECTED"
                 return httpx.Response(200, json={"serverTime": now_ms})
             assert request.url.path == "/fapi/v1/klines"
             params = request.url.params
@@ -128,6 +131,7 @@ def test_collector_recovers_all_feeds_after_websocket_closures(
                         await asyncio.sleep(0.01)
 
                 assert connection_index == 2
+                assert stream_store.health()["status"] == "CONNECTED"
                 with Session(db_engine) as session:
                     ws_opens = session.scalars(
                         select(Candle.open_time)

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from time import time_ns
 
 import httpx
 from websockets.asyncio.client import connect
@@ -10,7 +11,7 @@ from websockets.exceptions import ConnectionClosed, InvalidHandshake
 
 from baqs.db import make_engine
 from baqs.logging_config import configure_logging
-from baqs.market_data.repository import CandleStore
+from baqs.market_data.repository import STREAM_IDLE_TIMEOUT_SECONDS, CandleStore, MarketStreamStore
 from baqs.market_data.rest import PUBLIC_BASE_URL, PublicFuturesREST
 from baqs.market_data.schema import INTERVAL_MS, SYMBOLS, MarketDataError, from_ws_message
 from baqs.market_data.service import PublicMarketDataService
@@ -18,6 +19,7 @@ from baqs.settings import get_settings
 
 logger = logging.getLogger(__name__)
 MARKET_WS_BASE = "wss://fstream.binance.com/market/stream?streams="
+STREAM_RECEIPT_INTERVAL_SECONDS = 5
 
 
 def combined_stream_url() -> str:
@@ -35,8 +37,11 @@ async def run_collector() -> None:
         raise RuntimeError("Collector only operates in PAPER research mode")
     configure_logging(settings.log_level)
     engine = make_engine(settings)
+    stream_store = MarketStreamStore(engine)
+    loop = asyncio.get_running_loop()
     backoff = 1.0
     try:
+        stream_store.record_message(None)
         async with httpx.AsyncClient(
             base_url=PUBLIC_BASE_URL, timeout=10.0, follow_redirects=False
         ) as client:
@@ -52,16 +57,29 @@ async def run_collector() -> None:
                         open_timeout=10,
                         close_timeout=5,
                     ) as ws:
-                        # REST replay AFTER websocket connection; buffered events are
-                        # processed after reconciliation to close the reconnect race.
-                        await service.bootstrap_all()
-                        async for message in ws:
-                            if not isinstance(message, str):
-                                continue
-                            candle = from_ws_message(json.loads(message))
-                            if candle is not None:
-                                await service.ingest(candle)
-                                backoff = 1.0
+                        try:
+                            # Replay REST before consuming buffered events.
+                            await service.bootstrap_all()
+                            messages = aiter(ws)
+                            next_receipt = 0.0
+                            while True:
+                                async with asyncio.timeout(STREAM_IDLE_TIMEOUT_SECONDS):
+                                    message = await anext(messages, None)
+                                if message is None:
+                                    break
+                                if not isinstance(message, str):
+                                    continue
+                                received_ms = time_ns() // 1_000_000
+                                candle = from_ws_message(json.loads(message))
+                                if candle is not None:
+                                    await service.ingest(candle)
+                                    backoff = 1.0
+                                current = loop.time()
+                                if current >= next_receipt:
+                                    stream_store.record_message(received_ms)
+                                    next_receipt = current + STREAM_RECEIPT_INTERVAL_SECONDS
+                        finally:
+                            stream_store.record_message(None)
                 except (
                     ConnectionClosed,
                     InvalidHandshake,

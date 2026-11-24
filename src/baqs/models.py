@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -23,6 +24,13 @@ from sqlalchemy.schema import conv
 from baqs.db import Base
 
 json_type = JSON().with_variant(JSONB(), "postgresql")
+
+
+class MarketStreamState(Base):
+    __tablename__ = "market_stream_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    last_message_ms: Mapped[int | None] = mapped_column(BigInteger)
 
 
 class Candle(Base):
