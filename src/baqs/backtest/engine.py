@@ -455,7 +455,9 @@ class BacktestEngine:
                         quantity = min(quantity_by_risk, quantity_by_notional)
                         if quantity <= ZERO:
                             skipped.append(
-                                SkippedSignal(signal.signal_time_ms, signal.side, "ZERO_POSITION_SIZE")
+                                SkippedSignal(
+                                    signal.signal_time_ms, signal.side, "ZERO_POSITION_SIZE"
+                                )
                             )
                         else:
                             side_sign = ONE if signal.side == "LONG" else -ONE
