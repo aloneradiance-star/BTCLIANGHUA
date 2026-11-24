@@ -23,10 +23,21 @@ def client_for(engine: Engine) -> TestClient:
 
 def test_health_reports_no_execution(db_engine: Engine) -> None:
     client = client_for(db_engine)
-    data = client.get("/api/v1/health").json()
+    response = client.get("/api/v1/health")
+    data = response.json()
+    assert response.status_code == 503
     assert data["database"] == "CONNECTED"
     assert data["execution_enabled"] is False
-    assert data["market_data"] == "NOT_IMPLEMENTED"
+    assert data["market_data"] == "UNAVAILABLE"
+
+
+def test_market_health_no_data_does_not_claim_ready(db_engine: Engine) -> None:
+    response = client_for(db_engine).get("/api/v1/market/health")
+    assert response.status_code == 200
+    feeds = response.json()["feeds"]
+    assert feeds["BTCUSDT"]["1m"]["status"] == "NO_DATA"
+    assert feeds["ETHUSDT"]["1h"]["status"] == "NO_DATA"
+    assert response.json()["execution_enabled"] is False
 
 
 def test_absent_regimes_unavailable(db_engine: Engine) -> None:
