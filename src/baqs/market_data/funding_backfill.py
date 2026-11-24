@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--page-size", type=int, default=1000)
     parser.add_argument("--max-pages", type=int, default=100)
-    parser.add_argument("--pause-seconds", type=float, default=1.0)
+    parser.add_argument("--pause-seconds", type=float, default=1.25)
     return parser.parse_args()
 
 
