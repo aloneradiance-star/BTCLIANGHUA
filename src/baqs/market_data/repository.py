@@ -155,10 +155,24 @@ class CandleStore:
                 )
                 .order_by(Candle.open_time)
             ).all()
-        times = [_milliseconds(open_time) for open_time, _ in rows]
+        # All supported intervals have whole-second boundaries. Reject subsecond
+        # data before the shared millisecond conversion can round it away.
+        present_times = {
+            _milliseconds(open_time) for open_time, _ in rows if open_time.microsecond == 0
+        }
         invalid_close_count = sum(
-            _milliseconds(close_time) != _milliseconds(open_time) + step
+            open_time.microsecond != 0
+            or close_time.microsecond != 0
+            or _milliseconds(close_time) != _milliseconds(open_time) + step
             for open_time, close_time in rows
+        )
+        first_missing_open_ms = next(
+            (
+                start_ms + i * step
+                for i in range(required_bars)
+                if start_ms + i * step not in present_times
+            ),
+            None,
         )
         # Account for a stale final bar independently from warm-up completeness.
         last_available = self.latest_open_ms(symbol, timeframe)
@@ -167,12 +181,12 @@ class CandleStore:
         elif require_latest and last_available != anchored_end_ms - step:
             status = "STALE"
         elif (
-            len(times) == required_bars
+            len(rows) == required_bars
             and invalid_close_count == 0
-            and all(timestamp == start_ms + i * step for i, timestamp in enumerate(times))
+            and first_missing_open_ms is None
         ):
             status = "READY"
-        elif not times or times[0] > start_ms:
+        elif first_missing_open_ms == start_ms:
             status = "INSUFFICIENT"
         else:
             status = "GAP"
@@ -181,19 +195,12 @@ class CandleStore:
             "symbol": symbol,
             "timeframe": timeframe,
             "required_bars": required_bars,
-            "present_bars": len(times),
+            "present_bars": len(rows),
             "invalid_close_count": invalid_close_count,
             "anchored_end_ms": anchored_end_ms,
             "earliest_expected_open_ms": start_ms,
             "last_expected_open_ms": anchored_end_ms - step,
-            "first_missing_open_ms": next(
-                (
-                    start_ms + i * step
-                    for i in range(required_bars)
-                    if i >= len(times) or times[i] != start_ms + i * step
-                ),
-                None,
-            ),
+            "first_missing_open_ms": first_missing_open_ms,
         }
 
     def health(

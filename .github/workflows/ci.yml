@@ -42,7 +42,8 @@ jobs:
           BAQS_TEST_POSTGRES_URL: postgresql+psycopg://baqs:baqs_dev_only@localhost:5432/baqs_test
         run: |
           alembic upgrade head
-          python -m pytest -q tests/test_postgres.py
+          python -m pytest -q tests/test_postgres.py \
+            tests/test_history_readiness.py::test_postgresql_readiness_preserves_submillisecond_boundaries
           alembic downgrade base
           alembic upgrade head
       - name: No private API usage (Phase 1)
