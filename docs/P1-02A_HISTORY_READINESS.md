@@ -55,8 +55,8 @@ because some or most rows exist.
 ## Readiness
 `GET /api/v1/market/history-readiness` exposes per-symbol `15m` and
 `1h` health for a UTC observation time (2,920 required 15m bars and 60 required 1h bars). A ready result requires exactly
-the requested trailing window of expected completed candles and no gaps
-within it. `READY`, `NO_DATA`, `INSUFFICIENT`, `GAP` or `STALE`
+the requested trailing window of expected completed candles, exact exclusive close boundaries,
+and no gaps within it. `READY`, `NO_DATA`, `INSUFFICIENT`, `GAP` or `STALE`
 must remain explicit; no market probabilities or trade signals.
 
 Readiness reports describe **Kline coverage only**. They do not validate

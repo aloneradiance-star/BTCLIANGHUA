@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, delete, insert
+from sqlalchemy import Engine, delete, insert, update
 
 from baqs.api import create_app
 from baqs.market_data.repository import CandleStore
@@ -165,3 +165,23 @@ def test_future_latest_bar_does_not_certify_older_window(db_engine: Engine) -> N
         require_latest=True,
     )
     assert report["status"] == "STALE"
+
+
+def test_wrong_exclusive_close_boundary_invalidates_readiness(db_engine: Engine) -> None:
+    store = CandleStore(db_engine)
+    for i in (1, 2, 3):
+        store.upsert(closed(i))
+    target = closed(2)
+    with db_engine.begin() as connection:
+        connection.execute(
+            update(Candle)
+            .where(
+                Candle.symbol == target.symbol,
+                Candle.timeframe == target.timeframe,
+                Candle.open_time == target.open_time,
+            )
+            .values(close_time=target.open_time)
+        )
+    report = store.history_readiness("BTCUSDT", "1h", 4 * STEP, required_bars=3)
+    assert report["status"] == "GAP"
+    assert report["invalid_close_count"] == 1
