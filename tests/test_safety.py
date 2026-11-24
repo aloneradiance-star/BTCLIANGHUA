@@ -4,9 +4,9 @@ import ast
 import pathlib
 import re
 
+import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-import pytest
 
 from baqs.api import create_app
 from baqs.settings import Settings
