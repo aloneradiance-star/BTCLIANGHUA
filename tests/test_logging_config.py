@@ -15,9 +15,7 @@ def test_application_startup_emits_json_and_preserves_uvicorn(db_engine, capsys)
         logging.getLogger("uvicorn.error"),
         logging.getLogger("uvicorn.access"),
     )
-    original_uvicorn_handlers = {
-        logger.name: list(logger.handlers) for logger in uvicorn_loggers
-    }
+    original_uvicorn_handlers = {logger.name: list(logger.handlers) for logger in uvicorn_loggers}
     baqs_logger = logging.getLogger("baqs")
     original_baqs_handlers = list(baqs_logger.handlers)
     original_baqs_level = baqs_logger.level
@@ -38,21 +36,14 @@ def test_application_startup_emits_json_and_preserves_uvicorn(db_engine, capsys)
             pass
 
         captured = capsys.readouterr()
-        records = [
-            json.loads(line)
-            for line in captured.err.splitlines()
-            if line.startswith("{")
-        ]
-        startup = next(
-            record for record in records if record["message"] == "application_started"
-        )
+        records = [json.loads(line) for line in captured.err.splitlines() if line.startswith("{")]
+        startup = next(record for record in records if record["message"] == "application_started")
         assert startup["timestamp"].endswith("+00:00")
         assert startup["level"] == "INFO"
         assert startup["logger"] == "baqs.api"
         assert baqs_logger.propagate is False
         assert all(
-            logger.handlers == original_uvicorn_handlers[logger.name]
-            for logger in uvicorn_loggers
+            logger.handlers == original_uvicorn_handlers[logger.name] for logger in uvicorn_loggers
         )
     finally:
         for handler in list(baqs_logger.handlers):
