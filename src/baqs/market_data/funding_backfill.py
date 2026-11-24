@@ -25,9 +25,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--start-ms", type=int, required=True)
     parser.add_argument("--end-ms", type=int, required=True)
-    parser.add_argument(
-        "--symbols", nargs="+", choices=sorted(SYMBOLS), default=sorted(SYMBOLS)
-    )
+    parser.add_argument("--symbols", nargs="+", choices=sorted(SYMBOLS), default=sorted(SYMBOLS))
     parser.add_argument("--page-size", type=int, default=1000)
     parser.add_argument("--max-pages", type=int, default=100)
     parser.add_argument("--pause-seconds", type=float, default=1.25)

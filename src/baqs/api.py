@@ -114,7 +114,9 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
     ) -> dict[str, object]:
         """Read-only gate for exact 1m execution and funding-history coverage."""
         if (
-            start_ms % 60_000 or end_ms % 60_000 or end_ms <= start_ms
+            start_ms % 60_000
+            or end_ms % 60_000
+            or end_ms <= start_ms
             or (end_ms - start_ms) // 60_000 > 50_000
         ):
             raise HTTPException(
@@ -138,8 +140,10 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
                 "funding": funding,
             }
         return {
-            "start_ms": start_ms, "end_ms": end_ms,
-            "symbols": symbols, "execution_enabled": False,
+            "start_ms": start_ms,
+            "end_ms": end_ms,
+            "symbols": symbols,
+            "execution_enabled": False,
         }
 
     @app.get("/api/v1/market/candles")

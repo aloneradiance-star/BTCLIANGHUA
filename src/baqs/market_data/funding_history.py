@@ -55,9 +55,7 @@ class PublicFundingBackfill:
         self.max_pages = max_pages
         self.pause_seconds = pause_seconds
 
-    async def run(
-        self, symbol: str, start_ms: int, end_ms: int
-    ) -> FundingBackfillReport:
+    async def run(self, symbol: str, start_ms: int, end_ms: int) -> FundingBackfillReport:
         if (
             symbol not in SYMBOLS
             or type(start_ms) is not int

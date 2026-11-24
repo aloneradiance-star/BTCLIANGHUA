@@ -122,23 +122,33 @@ class PublicFuturesREST:
                     break
         return result
 
-
     async def fetch_funding_range(
-        self, symbol: str, start_ms: int, end_ms: int, *,
-        page_size: int = 1000, max_pages: int = 100, pause_seconds: float = 1.25,
+        self,
+        symbol: str,
+        start_ms: int,
+        end_ms: int,
+        *,
+        page_size: int = 1000,
+        max_pages: int = 100,
+        pause_seconds: float = 1.25,
     ) -> list[FundingRateRecord]:
         """Fetch [start_ms, end_ms) with inclusive REST bounds and bounded pagination."""
         if symbol not in SYMBOLS:
             raise ValueError("Unsupported funding symbol")
         if (
-            type(start_ms) is not int or type(end_ms) is not int
-            or start_ms < 0 or end_ms <= start_ms
-            or start_ms % 60_000 or end_ms % 60_000
+            type(start_ms) is not int
+            or type(end_ms) is not int
+            or start_ms < 0
+            or end_ms <= start_ms
+            or start_ms % 60_000
+            or end_ms % 60_000
         ):
             raise ValueError("Funding range must be a valid 1m-aligned UTC window")
         if (
-            type(page_size) is not int or not 1 <= page_size <= 1000
-            or type(max_pages) is not int or not 1 <= max_pages <= 1000
+            type(page_size) is not int
+            or not 1 <= page_size <= 1000
+            or type(max_pages) is not int
+            or not 1 <= max_pages <= 1000
             or not 0 <= pause_seconds <= 60
         ):
             raise ValueError("Unsafe funding pagination limits")
@@ -164,8 +174,10 @@ class PublicFuturesREST:
             for item in page:
                 key = (item.funding_time_ms, item.rate_type)
                 if (
-                    item.funding_time_ms < cursor or item.funding_time_ms >= end_ms
-                    or item.funding_time_ms < previous_time or key in seen_keys
+                    item.funding_time_ms < cursor
+                    or item.funding_time_ms >= end_ms
+                    or item.funding_time_ms < previous_time
+                    or key in seen_keys
                 ):
                     raise FundingGap("Funding events are duplicated, out of order or out of range")
                 seen_keys.add(key)
@@ -190,7 +202,8 @@ class PublicFuturesREST:
             boundary_keys = {(item.funding_time_ms, item.rate_type) for item in boundary_events}
             page_boundary_keys = {
                 (item.funding_time_ms, item.rate_type)
-                for item in page if item.funding_time_ms == boundary_time
+                for item in page
+                if item.funding_time_ms == boundary_time
             }
             if len(boundary_keys) != len(boundary_events) or boundary_keys != page_boundary_keys:
                 raise FundingGap("Funding page split events sharing one funding timestamp")

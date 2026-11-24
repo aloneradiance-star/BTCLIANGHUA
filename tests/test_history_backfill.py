@@ -253,9 +253,18 @@ def test_1m_execution_backfill_supports_30d_default_and_chunk_resume(db_engine: 
             assert (end_ms - start_ms) // minute <= max_bars
             return [
                 FinalCandle(
-                    symbol, timeframe, open_ms, open_ms + minute,
-                    Decimal(100), Decimal(102), Decimal(99), Decimal(101),
-                    Decimal(1), Decimal(100), 5, "REST",
+                    symbol,
+                    timeframe,
+                    open_ms,
+                    open_ms + minute,
+                    Decimal(100),
+                    Decimal(102),
+                    Decimal(99),
+                    Decimal(101),
+                    Decimal(1),
+                    Decimal(100),
+                    5,
+                    "REST",
                 )
                 for open_ms in range(start_ms, end_ms, minute)
             ]

@@ -33,18 +33,14 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.PrimaryKeyConstraint(
-            "symbol", "funding_time", "rate_type", name="pk_funding_rates"
-        ),
+        sa.PrimaryKeyConstraint("symbol", "funding_time", "rate_type", name="pk_funding_rates"),
         sa.CheckConstraint("mark_price > 0", name="ck_funding_rates_mark_price_positive"),
         sa.CheckConstraint(
             "rate_type IN ('Regular','Special')",
             name="ck_funding_rates_valid_rate_type",
         ),
     )
-    op.create_index(
-        "ix_funding_rates_recent", "funding_rates", ["symbol", "funding_time"]
-    )
+    op.create_index("ix_funding_rates_recent", "funding_rates", ["symbol", "funding_time"])
     op.create_table(
         "funding_coverage",
         sa.Column("symbol", sa.String(16), nullable=False),
@@ -61,17 +57,11 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.PrimaryKeyConstraint(
-            "symbol", "start_time", "end_time", name="pk_funding_coverage"
-        ),
+        sa.PrimaryKeyConstraint("symbol", "start_time", "end_time", name="pk_funding_coverage"),
         sa.CheckConstraint("end_time > start_time", name="ck_funding_coverage_valid_window"),
-        sa.CheckConstraint(
-            "event_count >= 0", name="ck_funding_coverage_event_count_nonnegative"
-        ),
+        sa.CheckConstraint("event_count >= 0", name="ck_funding_coverage_event_count_nonnegative"),
     )
-    op.create_index(
-        "ix_funding_coverage_recent", "funding_coverage", ["symbol", "end_time"]
-    )
+    op.create_index("ix_funding_coverage_recent", "funding_coverage", ["symbol", "end_time"])
 
 
 def downgrade() -> None:

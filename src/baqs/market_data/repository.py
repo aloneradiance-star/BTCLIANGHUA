@@ -28,9 +28,7 @@ class CandleStore:
         results: list[StoreResult] = []
         with Session(self.engine) as session:
             for candle in candles:
-                existing = session.get(
-                    Candle, (candle.symbol, candle.timeframe, candle.open_time)
-                )
+                existing = session.get(Candle, (candle.symbol, candle.timeframe, candle.open_time))
                 if existing is None:
                     session.add(
                         Candle(
@@ -52,8 +50,13 @@ class CandleStore:
                     results.append("CREATED")
                     continue
                 old_fingerprint = (
-                    existing.open, existing.high, existing.low, existing.close,
-                    existing.volume, existing.quote_volume, existing.trade_count,
+                    existing.open,
+                    existing.high,
+                    existing.low,
+                    existing.close,
+                    existing.volume,
+                    existing.quote_volume,
+                    existing.trade_count,
                 )
                 if existing.is_final:
                     if old_fingerprint != candle.fingerprint() or (

@@ -51,13 +51,8 @@ class FundingStore:
 
     def upsert_many(self, records: Sequence[FundingRateRecord]) -> list[str]:
         """Idempotently persist a batch; same-time Regular/Special events remain distinct."""
-        ordered = sorted(
-            records, key=lambda record: (record.funding_time_ms, record.rate_type)
-        )
-        keys = [
-            (record.symbol, record.funding_time_ms, record.rate_type)
-            for record in ordered
-        ]
+        ordered = sorted(records, key=lambda record: (record.funding_time_ms, record.rate_type))
+        keys = [(record.symbol, record.funding_time_ms, record.rate_type) for record in ordered]
         if len(keys) != len(set(keys)):
             raise FundingConflict("Duplicate funding event key in one batch")
         outcomes: list[str] = []
@@ -127,15 +122,10 @@ class FundingStore:
             or start_ms % 60_000
             or end_ms % 60_000
         ):
-            raise ValueError(
-                "Funding coverage window must be a valid 1m-aligned UTC interval"
-            )
-        ordered = sorted(
-            records, key=lambda record: (record.funding_time_ms, record.rate_type)
-        )
+            raise ValueError("Funding coverage window must be a valid 1m-aligned UTC interval")
+        ordered = sorted(records, key=lambda record: (record.funding_time_ms, record.rate_type))
         if any(
-            record.symbol != symbol
-            or not start_ms <= record.funding_time_ms < end_ms
+            record.symbol != symbol or not start_ms <= record.funding_time_ms < end_ms
             for record in ordered
         ):
             raise FundingGap("Funding record is outside the requested symbol/window")
@@ -159,9 +149,7 @@ class FundingStore:
             stored = [self._row_record(row) for row in rows]
             stored_fingerprints = [_fingerprint(record) for record in stored]
             if stored_fingerprints != expected_fingerprints:
-                raise FundingGap(
-                    "Persisted funding events do not match complete source response"
-                )
+                raise FundingGap("Persisted funding events do not match complete source response")
 
             coverage = session.get(FundingCoverageRecord, (symbol, start, end))
             if coverage is not None:
@@ -193,9 +181,7 @@ class FundingStore:
             session.commit()
             return "CREATED"
 
-    def coverage_readiness(
-        self, symbol: str, start_ms: int, end_ms: int
-    ) -> dict[str, object]:
+    def coverage_readiness(self, symbol: str, start_ms: int, end_ms: int) -> dict[str, object]:
         if (
             symbol not in SYMBOLS
             or type(start_ms) is not int
@@ -255,9 +241,7 @@ class FundingStore:
                 "source": coverage.source,
             }
 
-    def load_window(
-        self, symbol: str, start_ms: int, end_ms: int
-    ) -> FundingWindowSnapshot:
+    def load_window(self, symbol: str, start_ms: int, end_ms: int) -> FundingWindowSnapshot:
         """Return funding events only after verifying coverage and fingerprints atomically."""
         start, end = _datetime(start_ms), _datetime(end_ms)
         with Session(self.engine) as session:

@@ -97,12 +97,17 @@ def test_funding_rest_rejects_missing_mark_price() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/fapi/v1/time":
             return httpx.Response(200, json={"serverTime": SERVER})
-        return httpx.Response(200, json=[{
-            "symbol": "BTCUSDT",
-            "fundingRate": ".001",
-            "fundingTime": START,
-            "rateType": "Regular",
-        }])
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "symbol": "BTCUSDT",
+                    "fundingRate": ".001",
+                    "fundingTime": START,
+                    "rateType": "Regular",
+                }
+            ],
+        )
 
     async def run() -> None:
         async with httpx.AsyncClient(
@@ -213,9 +218,7 @@ def test_funding_window_backfill_is_idempotent_and_certifies_complete_data(
 
     async def run() -> None:
         store = FundingStore(db_engine)
-        service = PublicFundingBackfill(
-            StubReader(), store, page_size=1000, pause_seconds=0
-        )
+        service = PublicFundingBackfill(StubReader(), store, page_size=1000, pause_seconds=0)
         first = await service.run("BTCUSDT", START, END)
         assert first.readiness == "READY"
         assert first.created_events == 2
@@ -248,9 +251,10 @@ def test_funding_backfill_rejects_out_of_window_records(db_engine: Engine) -> No
             await PublicFundingBackfill(BadReader(), FundingStore(db_engine)).run(
                 "BTCUSDT", START, END
             )
-        assert FundingStore(db_engine).coverage_readiness("BTCUSDT", START, END)[
-            "status"
-        ] == "NO_COVERAGE"
+        assert (
+            FundingStore(db_engine).coverage_readiness("BTCUSDT", START, END)["status"]
+            == "NO_COVERAGE"
+        )
 
     asyncio.run(run())
 
@@ -271,7 +275,10 @@ def test_backtest_readiness_api_is_read_only_and_fails_closed(db_engine: Engine)
         assert payload["symbols"]["BTCUSDT"]["status"] == "UNAVAILABLE"
         assert payload["symbols"]["BTCUSDT"]["execution_1m"]["status"] == "NO_DATA"
         assert payload["symbols"]["BTCUSDT"]["funding"]["status"] == "NO_COVERAGE"
-        assert client.get(
-            "/api/v1/market/backtest-readiness",
-            params={"start_ms": START + 1, "end_ms": START + 60_000},
-        ).status_code == 422
+        assert (
+            client.get(
+                "/api/v1/market/backtest-readiness",
+                params={"start_ms": START + 1, "end_ms": START + 60_000},
+            ).status_code
+            == 422
+        )
