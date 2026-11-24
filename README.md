@@ -20,7 +20,13 @@ alembic upgrade head
 uvicorn baqs.api:app --reload
 ```
 Open `http://127.0.0.1:8000/docs`. API endpoints are read-only:
-`GET /api/v1/health`, `GET /api/v1/market/candles`, and `GET /api/v1/market/regimes`.
+`GET /api/v1/health`, `GET /api/v1/market/candles`, and
+`GET /api/v1/market/regimes?timeframe=5m`. The regime endpoint defaults to
+`5m`, accepts `1m`, `5m`, `15m`, or `1h`, and only returns a snapshot for
+the requested timeframe; a missing timeframe is explicitly `UNAVAILABLE`.
+Application logs in the `baqs` namespace are JSON lines on stderr. Uvicorn
+access/error logging keeps the server's own logging configuration.
+
 The database begins empty; **market ingestion is Issue #2**, and regimes are Issue #4.
 On empty data, endpoints must report unavailable data, not fabricated signals.
 

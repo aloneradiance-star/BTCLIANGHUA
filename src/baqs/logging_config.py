@@ -7,6 +7,7 @@ error loggers retain the logging configuration supplied by the ASGI server.
 import json
 import logging
 from datetime import UTC, datetime
+from typing import TextIO
 
 
 class JsonFormatter(logging.Formatter):
@@ -24,7 +25,7 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False)
 
 
-class JsonStreamHandler(logging.StreamHandler):
+class JsonStreamHandler(logging.StreamHandler[TextIO]):
     """Marker handler so repeated initialization does not add duplicates."""
 
 

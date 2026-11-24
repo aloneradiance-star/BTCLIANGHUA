@@ -13,7 +13,7 @@ from baqs.settings import Settings
 
 
 _PRIVATE_PATH = re.compile(
-    r"/fapi/v\\d+/(?:account|balance|positionrisk|positionside/dual|leverage|margintype|"
+    r"/fapi/v\d+/(?:account|balance|positionrisk|positionside/dual|leverage|margintype|"
     r"order|openorders|allorders|algoorder|openalgoorders|allalgoorders|listenkey|"
     r"usertrades|income|forceorders|commissionrate|positionmargin|apitradingstatus)"
     r"(?:$|[/?#])",
@@ -49,7 +49,7 @@ def private_api_violations(source: str, filename: str = "<source>") -> list[str]
                 if isinstance(node, ast.Import)
                 else [node.module.lower() if node.module else ""]
             )
-            if any(name == "hmac" or name.startswith("binance.client") for name in imported):
+            if any(name == "hmac" or name == "binance" or name.startswith("binance.") for name in imported):
                 violations.append(f"authenticated/private client import at line {node.lineno}")
 
         if isinstance(node, ast.Name) and node.id.lower() in _SECRET_NAMES:
@@ -68,6 +68,8 @@ def private_api_violations(source: str, filename: str = "<source>") -> list[str]
                 violations.append(f"private USD-M endpoint literal at line {node.lineno}")
             if _API_KEY_HEADER.search(literal):
                 violations.append(f"Binance API-key header literal at line {node.lineno}")
+            if literal.lower() == "signature" or re.search(r"[?&]signature=", literal, re.IGNORECASE):
+                violations.append(f"request-signature literal at line {node.lineno}")
             if literal.lower() in {"listenkey", "userdata", "userdatastream"}:
                 violations.append(f"user-data-stream literal at line {node.lineno}")
 
@@ -114,6 +116,8 @@ def test_no_exchange_secrets_or_execution_module() -> None:
         "api_secret = secret",
         "signature = value",
         "import hmac",
+        "from hmac import new",
+        "API_KEY = token",
     ],
 )
 def test_private_and_authenticated_patterns_are_rejected(source: str) -> None:

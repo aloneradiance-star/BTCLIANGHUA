@@ -108,6 +108,7 @@ def test_regimes_reject_unsupported_timeframe(db_engine: Engine) -> None:
     response = client_for(db_engine).get("/api/v1/market/regimes?timeframe=2m")
     assert response.status_code == 422
 
+
 def test_candles_only_returns_finalized(db_engine: Engine) -> None:
     moment = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
     with Session(db_engine) as session:
