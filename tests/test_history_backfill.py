@@ -285,9 +285,7 @@ def test_explicit_aligned_range_backfill_uses_exact_window(db_engine: Engine) ->
     async def run() -> None:
         store = CandleStore(db_engine)
         reader = StubReader()
-        report = await PublicHistoryBackfill(
-            reader, store, chunk_bars=20, pause_seconds=0
-        ).run(
+        report = await PublicHistoryBackfill(reader, store, chunk_bars=20, pause_seconds=0).run(
             "BTCUSDT",
             "1h",
             start_ms=80 * STEP,
@@ -308,18 +306,12 @@ def test_explicit_range_rejects_invalid_bounds_and_ambiguous_bars(db_engine: Eng
         with pytest.raises(ValueError, match="both start_ms and end_ms"):
             await history.run("BTCUSDT", "1h", start_ms=80 * STEP)
         with pytest.raises(ValueError, match="not both"):
-            await history.run(
-                "BTCUSDT", "1h", bars=120, start_ms=80 * STEP, end_ms=ANCHOR
-            )
+            await history.run("BTCUSDT", "1h", bars=120, start_ms=80 * STEP, end_ms=ANCHOR)
         with pytest.raises(ValueError, match="interval-aligned"):
-            await history.run(
-                "BTCUSDT", "1h", start_ms=80 * STEP + 1, end_ms=ANCHOR
-            )
+            await history.run("BTCUSDT", "1h", start_ms=80 * STEP + 1, end_ms=ANCHOR)
         with pytest.raises(ValueError, match="120..2160"):
             await history.run("BTCUSDT", "1h", start_ms=0, end_ms=2161 * STEP)
         with pytest.raises(CandleGap, match="beyond Binance server time"):
-            await history.run(
-                "BTCUSDT", "1h", start_ms=80 * STEP, end_ms=ANCHOR + STEP
-            )
+            await history.run("BTCUSDT", "1h", start_ms=80 * STEP, end_ms=ANCHOR + STEP)
 
     asyncio.run(run())

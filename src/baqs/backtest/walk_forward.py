@@ -252,9 +252,7 @@ class WalkForwardResearchService:
             )
             for scenario in self.cost_scenarios
         }
-        sufficient = all(
-            bool(aggregate["sufficient_sample"]) for aggregate in aggregates.values()
-        )
+        sufficient = all(bool(aggregate["sufficient_sample"]) for aggregate in aggregates.values())
         return WalkForwardReport(
             status="READY" if sufficient else "INSUFFICIENT_SAMPLE",
             symbol=symbol,

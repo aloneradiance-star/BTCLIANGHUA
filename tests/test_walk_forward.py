@@ -65,13 +65,9 @@ def _seed_walk_forward(engine: Engine) -> None:
         for i in range(3 * 1440)
     ]
     bars_15m = [
-        _candle("15m", START - 2920 * QUARTER + i * QUARTER, QUARTER)
-        for i in range(2920 + 3 * 96)
+        _candle("15m", START - 2920 * QUARTER + i * QUARTER, QUARTER) for i in range(2920 + 3 * 96)
     ]
-    bars_1h = [
-        _candle("1h", START - 120 * HOUR + i * HOUR, HOUR)
-        for i in range(120 + 3 * 24)
-    ]
+    bars_1h = [_candle("1h", START - 120 * HOUR + i * HOUR, HOUR) for i in range(120 + 3 * 24)]
     store.upsert_many(bars_1m)
     store.upsert_many(bars_15m)
     store.upsert_many(bars_1h)
@@ -96,8 +92,7 @@ def test_fold_windows_are_equal_adjacent_and_half_open() -> None:
     assert windows[0].start_ms == START
     assert windows[-1].end_ms == END
     assert all(
-        left.end_ms == right.start_ms
-        for left, right in zip(windows, windows[1:], strict=False)
+        left.end_ms == right.start_ms for left, right in zip(windows, windows[1:], strict=False)
     )
     assert all(window.end_ms - window.start_ms == DAY for window in windows)
 
