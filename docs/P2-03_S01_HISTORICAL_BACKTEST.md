@@ -16,7 +16,8 @@ For a requested 15m-aligned half-open UTC window `[start_ms, end_ms)`:
 
 - Load exactly every finalized 1m execution candle in the requested interval.
   Missing minutes, non-final rows, invalid boundaries, missing quote volume or
-  missing trade counts return `UNAVAILABLE`.
+  missing trade counts return `UNAVAILABLE`. Future evaluation windows are also
+  rejected even if future-dated rows have been manually inserted.
 - Load **2,920 preceding finalized 15m candles plus all 15m evaluation candles**.
   This is the full 30-day empirical-percentile warm-up required by S01.
 - Load **120 preceding closed 1h candles**, anchored to the last completed hour
@@ -68,7 +69,8 @@ stdout. A valid run has `status=READY`; incomplete data has
 - Exact execution window, 15m/1h warm-up boundaries, row counts, source counts
   and SHA-256 dataset fingerprints.
 - Funding manifest timestamps, event count and fingerprint digest.
-- Strategy version, explicit cost/risk assumptions and model limitations.
+- Strategy version and every active S01 threshold, explicit cost/risk assumptions
+  and model limitations.
 
 JSON serialization uses stable key ordering and Decimal strings. The report has
 no wall-clock run timestamp, so replaying unchanged inputs and assumptions
