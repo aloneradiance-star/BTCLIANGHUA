@@ -32,6 +32,8 @@ Official references:
 
 ## Manual collection
 
+Before the first run, start the configured PostgreSQL database, set `BAQS_DATABASE_URL` (or `.env`), and apply the checked-in schema migrations with `alembic upgrade head`. The collector intentionally does not create or migrate production tables automatically.
+
 **Recommended one-command path** (opt-in; defaults to BTCUSDT and ETHUSDT, 43,200
 finalized 1m candles / 30 days each):
 
