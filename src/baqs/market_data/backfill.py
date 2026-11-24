@@ -40,7 +40,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--bars",
         type=int,
-        help="Default 43200 for 1m, 2920 for 15m, 120 for 1h; max 50000",
+        help="Default 43200 for 1m, 2920 for 15m, 120 for 1h; max 129600",
+    )
+    parser.add_argument(
+        "--start-ms",
+        type=int,
+        help="Explicit inclusive UTC window start (requires --end-ms; interval-aligned)",
+    )
+    parser.add_argument(
+        "--end-ms",
+        type=int,
+        help="Explicit exclusive UTC window end (requires --start-ms; interval-aligned)",
     )
     parser.add_argument(
         "--chunk-bars",
@@ -68,7 +78,13 @@ async def _run(args: argparse.Namespace) -> None:
                 chunk_bars=args.chunk_bars,
             )
             for symbol in args.symbols:
-                report = await service.run(symbol, args.timeframe, bars=args.bars)
+                report = await service.run(
+                    symbol,
+                    args.timeframe,
+                    bars=args.bars,
+                    start_ms=args.start_ms,
+                    end_ms=args.end_ms,
+                )
                 print(json.dumps(asdict(report), sort_keys=True))
                 logger.info("Public history verified for %s %s", symbol, args.timeframe)
     finally:

@@ -17,7 +17,7 @@ MIN_15M_BARS = 2920  # Operational minimum includes the classifier warm-up buffe
 MIN_1H_BARS = 120  # Classifier readiness uses a 120-bar 1h buffer.
 DEFAULT_BARS = {"1m": 43_200, "15m": 2920, "1h": 120}
 MINIMUM_BARS = {"1m": 1, "15m": MIN_15M_BARS, "1h": MIN_1H_BARS}
-MAX_BACKFILL_BARS = 50_000
+MAX_BACKFILL_BARS = 129_600  # Explicitly bounded to 90 days of 1m candles
 
 
 class PublicHistoryReader(Protocol):
@@ -73,20 +73,52 @@ class PublicHistoryBackfill:
         timeframe: str,
         *,
         bars: int | None = None,
+        start_ms: int | None = None,
+        end_ms: int | None = None,
     ) -> BackfillReport:
         if symbol not in SYMBOLS or timeframe not in DEFAULT_BARS:
             raise ValueError("Only BTC/ETH 1m, 15m and 1h public history is supported")
-        requested = DEFAULT_BARS[timeframe] if bars is None else bars
-        minimum = MINIMUM_BARS[timeframe]
-        if type(requested) is not int or not minimum <= requested <= MAX_BACKFILL_BARS:
-            raise ValueError(f"{timeframe} backfill requires {minimum}..{MAX_BACKFILL_BARS} bars")
+        if (start_ms is None) != (end_ms is None):
+            raise ValueError("Explicit historical backfill requires both start_ms and end_ms")
+        if start_ms is not None and bars is not None:
+            raise ValueError("Use either bars or an explicit start_ms/end_ms range, not both")
 
         step = INTERVAL_MS[timeframe]
+        minimum = MINIMUM_BARS[timeframe]
+        if start_ms is None:
+            requested = DEFAULT_BARS[timeframe] if bars is None else bars
+            if type(requested) is not int or not minimum <= requested <= MAX_BACKFILL_BARS:
+                raise ValueError(
+                    f"{timeframe} backfill requires {minimum}..{MAX_BACKFILL_BARS} bars"
+                )
+        else:
+            assert end_ms is not None
+            if (
+                type(start_ms) is not int
+                or type(end_ms) is not int
+                or start_ms < 0
+                or end_ms <= start_ms
+                or start_ms % step
+                or end_ms % step
+            ):
+                raise ValueError("Explicit historical range must be positive and interval-aligned")
+            requested = (end_ms - start_ms) // step
+            if not minimum <= requested <= MAX_BACKFILL_BARS:
+                raise ValueError(
+                    f"{timeframe} range requires {minimum}..{MAX_BACKFILL_BARS} bars"
+                )
+
         server_ms = await self.reader.server_time_ms()
         if type(server_ms) is not int or server_ms < 0:
             raise CandleGap("Invalid Binance server clock")
-        anchor = server_ms // step * step  # excludes all unfinished candles
-        start_ms = anchor - requested * step
+        if start_ms is None:
+            anchor = server_ms // step * step  # excludes all unfinished candles
+            start_ms = anchor - requested * step
+        else:
+            assert end_ms is not None
+            if end_ms > server_ms:
+                raise CandleGap("Explicit historical range extends beyond Binance server time")
+            anchor = end_ms
         if start_ms < 0:
             raise CandleGap("Insufficient exchange history for requested range")
         created, fetched, reused = 0, 0, 0

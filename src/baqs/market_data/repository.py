@@ -142,12 +142,12 @@ class CandleStore:
         step = INTERVAL_MS[timeframe]
         if (
             type(required_bars) is not int
-            or not 1 <= required_bars <= 50_000
+            or not 1 <= required_bars <= 129_600
             or type(anchored_end_ms) is not int
             or anchored_end_ms < required_bars * step
             or anchored_end_ms % step
         ):
-            raise ValueError("Invalid historical readiness window")
+            raise ValueError("Historical readiness requires 1..129600 interval-aligned bars")
         start_ms = anchored_end_ms - required_bars * step
         start = datetime.fromtimestamp(start_ms / 1000, tz=UTC)
         end = datetime.fromtimestamp(anchored_end_ms / 1000, tz=UTC)
