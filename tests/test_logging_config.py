@@ -31,10 +31,7 @@ def test_application_startup_emits_json_and_preserves_uvicorn(db_engine, capsys)
     assert startup["level"] == "INFO"
     assert startup["logger"] == "baqs.api"
     assert logging.getLogger("baqs").propagate is False
-    assert all(
-        logger.handlers == original_handlers[logger.name]
-        for logger in uvicorn_loggers
-    )
+    assert all(logger.handlers == original_handlers[logger.name] for logger in uvicorn_loggers)
 
 
 def test_configure_logging_is_idempotent_and_does_not_reset_uvicorn() -> None:
@@ -56,7 +53,4 @@ def test_configure_logging_is_idempotent_and_does_not_reset_uvicorn() -> None:
     assert baqs_handlers[0].level == logging.DEBUG
     assert isinstance(baqs_handlers[0].formatter, JsonFormatter)
     assert logging.getLogger("baqs").propagate is False
-    assert all(
-        logger.handlers == original_handlers[logger.name]
-        for logger in uvicorn_loggers
-    )
+    assert all(logger.handlers == original_handlers[logger.name] for logger in uvicorn_loggers)
