@@ -9,6 +9,8 @@ broker, exchange adapter, order router, live signal service or proof of alpha.
 - Strategy: contiguous, finalized 15m candles and 1h candles for the same symbol.
 - Signals are evaluated at the exclusive close boundary of a completed 15m bar.
   The earliest possible entry is the next 1m bar open at that same boundary.
+  A signal at the final exclusive boundary is recorded as skipped with reason
+  `NO_NEXT_1M_EXECUTION_BAR`.
 - All evaluation bars must be present; duplicates, mixed symbols, non-1m fills,
   gaps and out-of-order data fail closed.
 - Funding is mandatory as an explicit input. Each event contains the symbol,
@@ -79,7 +81,11 @@ parameters. The signal is not a calibrated probability or trade recommendation.
   denominator; net PnL includes fees, funding and slippage.
 - The engine records gross PnL, fees, funding, slippage, net PnL, R multiple,
   per-minute mark-to-market equity, drawdown, win rate, profit factor and
-  exposure. Undefined statistics remain null rather than fabricated.
+  exposure. Equity is marked at each 1m close before hypothetical exit costs
+  for an open position; drawdown is close-to-close, not intrabar extremes.
+  Undefined statistics remain null rather than fabricated.
+- The result assumptions retain the exact numeric equity, risk, notional,
+  reward/risk, fee and slippage inputs, plus funding window and event count.
 
 ## Run from Python
 

@@ -93,6 +93,10 @@ def test_long_trade_uses_next_minute_open_and_all_explicit_costs() -> None:
     assert trade.fees > 0
     assert trade.funding_cost > 0
     assert trade.slippage_cost > 0
+    assert result.assumptions["taker_fee_bps"] == "10"
+    assert result.assumptions["slippage_bps"] == "5"
+    assert result.assumptions["risk_fraction"] == "0.005"
+    assert result.assumptions["funding_event_count"] == "1"
     assert trade.net_pnl == trade.gross_pnl - trade.fees - trade.funding_cost
     reconciliation_error = abs(
         result.metrics.final_equity - result.metrics.initial_equity - trade.net_pnl
