@@ -1,5 +1,7 @@
 """Phase-1 guard against private Binance USD-M and authenticated API usage."""
 
+# ruff: noqa: I001
+
 from ast import (
     AsyncFunctionDef,
     Attribute,
