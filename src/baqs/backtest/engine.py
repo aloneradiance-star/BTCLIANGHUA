@@ -252,6 +252,9 @@ def _validate_inputs(
         raise BacktestUnavailable("FUNDING_COVERAGE_WINDOW_MISMATCH")
     expected = funding_coverage.expected_timestamps_ms
     events = sorted(funding_events, key=lambda event: (event.timestamp_ms, event.rate_type))
+    event_keys = [(event.timestamp_ms, event.rate_type) for event in events]
+    if len(event_keys) != len(set(event_keys)):
+        raise BacktestUnavailable("Duplicate funding event key")
     actual = tuple(event.timestamp_ms for event in events)
     if actual != expected:
         raise BacktestUnavailable("FUNDING_EVENTS_DO_NOT_MATCH_COMPLETENESS_MANIFEST")
