@@ -86,9 +86,7 @@ def private_api_violations(source: str, filename: str = "<source>") -> list[str]
                 violations.append(f"private USD-M endpoint literal at line {node.lineno}")
             if _API_KEY_HEADER.search(literal):
                 violations.append(f"Binance API-key header literal at line {node.lineno}")
-            if literal.lower() == "signature" or search(
-                r"[?&]signature=", literal, IGNORECASE
-            ):
+            if literal.lower() == "signature" or search(r"[?&]signature=", literal, IGNORECASE):
                 violations.append(f"request-signature literal at line {node.lineno}")
             if literal.lower() in {"listenkey", "userdata", "userdatastream"}:
                 violations.append(f"user-data-stream literal at line {node.lineno}")
