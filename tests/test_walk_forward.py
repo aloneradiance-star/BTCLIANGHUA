@@ -97,6 +97,11 @@ def test_fold_windows_are_equal_adjacent_and_half_open() -> None:
     assert all(window.end_ms - window.start_ms == DAY for window in windows)
 
 
+def test_fold_windows_enforces_90_day_history_cap_including_warmup() -> None:
+    with pytest.raises(ValueError, match="90-day history cap"):
+        fold_windows(START, START + 60 * DAY, 3)
+
+
 @pytest.mark.parametrize(
     ("start_ms", "end_ms", "fold_count"),
     [
@@ -106,11 +111,6 @@ def test_fold_windows_are_equal_adjacent_and_half_open() -> None:
         (START, END + QUARTER, 3),
     ],
 )
-def test_fold_windows_enforces_90_day_history_cap_including_warmup() -> None:
-    with pytest.raises(ValueError, match="90-day history cap"):
-        fold_windows(START, START + 60 * DAY, 3)
-
-
 def test_fold_windows_reject_unaligned_or_nondivisible_ranges(
     start_ms: int, end_ms: int, fold_count: int
 ) -> None:
