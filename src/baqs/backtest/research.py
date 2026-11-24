@@ -188,7 +188,9 @@ def _require_ready(
         required_bars=bars,
         require_latest=False,
     )
-    if readiness["status"] != "READY":
+    if readiness["status"] != "READY" and not (
+        readiness["invalid_metadata_count"] or readiness["invalid_close_count"]
+    ):
         raise BacktestUnavailable(f"{timeframe.upper()}_HISTORY_{readiness['status']}")
 
 
