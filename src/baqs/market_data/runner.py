@@ -55,13 +55,13 @@ async def run_collector() -> None:
                         # REST replay AFTER websocket connection; buffered events are
                         # processed after reconciliation to close the reconnect race.
                         await service.bootstrap_all()
-                        backoff = 1.0
                         async for message in ws:
                             if not isinstance(message, str):
                                 continue
                             candle = from_ws_message(json.loads(message))
                             if candle is not None:
                                 await service.ingest(candle)
+                                backoff = 1.0
                 except (
                     ConnectionClosed,
                     InvalidHandshake,
@@ -74,8 +74,10 @@ async def run_collector() -> None:
                     logger.warning(
                         "Public market stream unhealthy; reconnecting: %s", type(exc).__name__
                     )
-                    await asyncio.sleep(backoff)
-                    backoff = min(30.0, backoff * 2)
+                else:
+                    logger.info("Public market stream closed; reconnecting")
+                await asyncio.sleep(backoff)
+                backoff = min(30.0, backoff * 2)
     finally:
         engine.dispose()
 
