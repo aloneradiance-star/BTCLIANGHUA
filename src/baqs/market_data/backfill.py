@@ -13,7 +13,7 @@ import httpx
 
 from baqs.db import make_engine
 from baqs.logging_config import configure_logging
-from baqs.market_data.history import MAX_BARS_BY_TIMEFRAME, DEFAULT_BARS, PublicHistoryBackfill
+from baqs.market_data.history import DEFAULT_BARS, MAX_BARS_BY_TIMEFRAME, PublicHistoryBackfill
 from baqs.market_data.repository import CandleStore
 from baqs.market_data.rest import PUBLIC_BASE_URL, PublicFuturesREST
 from baqs.market_data.schema import SYMBOLS

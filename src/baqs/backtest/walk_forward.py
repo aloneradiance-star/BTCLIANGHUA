@@ -4,7 +4,7 @@ import argparse
 import json
 from dataclasses import asdict, dataclass, is_dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from sqlalchemy.engine import Engine
 
@@ -105,7 +105,7 @@ def _json_value(value: object) -> object:
     if isinstance(value, tuple | list):
         return [_json_value(item) for item in value]
     if is_dataclass(value):
-        return _json_value(asdict(cast(object, value)))
+        return _json_value(asdict(cast(Any, value)))
     return value
 
 

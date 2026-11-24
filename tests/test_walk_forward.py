@@ -3,7 +3,7 @@
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -188,9 +188,7 @@ def test_walk_forward_fails_closed_without_each_fold_funding_manifest(
 ) -> None:
     _seed_walk_forward(db_engine)
     with Session(db_engine) as session:
-        session.query(FundingCoverageRecord).filter(
-            FundingCoverageRecord.start_time == FundingCoverageRecord.start_time
-        ).delete()
+        session.execute(delete(FundingCoverageRecord))
         session.commit()
     monkeypatch.setattr(S01TrendPullbackStrategy, "generate_signals", lambda self, bars15, bars1h: [])
     report = WalkForwardResearchService(
