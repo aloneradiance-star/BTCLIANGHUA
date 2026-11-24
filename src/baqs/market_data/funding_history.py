@@ -18,7 +18,7 @@ class PublicFundingReader(Protocol):
         *,
         page_size: int = 1000,
         max_pages: int = 100,
-        pause_seconds: float = 1.0,
+        pause_seconds: float = 1.25,
     ) -> list[FundingRateRecord]: ...
 
 
