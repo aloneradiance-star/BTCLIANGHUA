@@ -269,17 +269,18 @@ def _validate_inputs(
             raise BacktestUnavailable("SIGNAL_SYMBOL_MISMATCH")
         if signal.signal_time_ms < start_ms:
             continue  # Pre-evaluation warm-up signal; never opened in this run.
-        if signal.signal_time_ms == end_ms:
-            continue  # Closed at the sample boundary, but no next-minute fill exists.
         if signal.signal_time_ms > end_ms:
             raise BacktestUnavailable("SIGNAL_AFTER_BACKTEST_WINDOW")
         strategy_versions.add(signal.strategy_version)
         if signal.signal_time_ms % 900_000:
             raise BacktestUnavailable("SIGNAL_NOT_AT_CLOSED_15M_BOUNDARY")
-        if signal.signal_time_ms not in bar_opens:
-            raise BacktestUnavailable("SIGNAL_HAS_NO_NEXT_1M_EXECUTION_BAR")
         if signal.signal_time_ms in signal_by_time:
             raise BacktestUnavailable("DUPLICATE_SIGNAL_TIMESTAMP")
+        if signal.signal_time_ms == end_ms:
+            signal_by_time[signal.signal_time_ms] = signal
+            continue  # The final closed signal has no following execution minute.
+        if signal.signal_time_ms not in bar_opens:
+            raise BacktestUnavailable("SIGNAL_HAS_NO_NEXT_1M_EXECUTION_BAR")
         signal_by_time[signal.signal_time_ms] = signal
     if len(strategy_versions) > 1:
         raise BacktestUnavailable("MIXED_STRATEGY_VERSIONS")
@@ -548,6 +549,16 @@ class BacktestEngine:
                     unrealized_pnl=unrealized,
                     equity=equity,
                     drawdown=drawdown,
+                )
+            )
+
+        terminal_signal = signal_by_time.get(execution_bars[-1].close_ms)
+        if terminal_signal is not None:
+            skipped.append(
+                SkippedSignal(
+                    terminal_signal.signal_time_ms,
+                    terminal_signal.side,
+                    "NO_NEXT_1M_EXECUTION_BAR",
                 )
             )
 

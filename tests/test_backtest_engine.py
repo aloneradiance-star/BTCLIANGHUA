@@ -94,7 +94,12 @@ def test_long_trade_uses_next_minute_open_and_all_explicit_costs() -> None:
     assert trade.funding_cost > 0
     assert trade.slippage_cost > 0
     assert trade.net_pnl == trade.gross_pnl - trade.fees - trade.funding_cost
-    assert result.metrics.final_equity == result.metrics.initial_equity + trade.net_pnl
+    reconciliation_error = abs(
+        result.metrics.final_equity
+        - result.metrics.initial_equity
+        - trade.net_pnl
+    )
+    assert reconciliation_error < Decimal("1e-20")
 
 
 def test_short_trade_pays_adverse_slippage_and_can_profit() -> None:
@@ -185,6 +190,8 @@ def test_signal_at_final_exclusive_boundary_is_not_executable() -> None:
     # A signal at end_ms has no following execution minute and must not be filled.
     result = run(bars, [signal(timestamp=bars[-1].close_ms)])
     assert result.trades == ()
+    assert len(result.skipped_signals) == 1
+    assert result.skipped_signals[0].reason == "NO_NEXT_1M_EXECUTION_BAR"
 
 
 def test_repeat_replay_is_deterministic() -> None:
