@@ -73,7 +73,10 @@ parameters. The signal is not a calibrated probability or trade recommendation.
 ```python
 from decimal import Decimal
 from baqs.backtest import (
-    BacktestConfig, BacktestEngine, CostModel, FundingCoverage,
+    BacktestConfig,
+    BacktestEngine,
+    CostModel,
+    FundingCoverage,
 )
 from baqs.strategies import S01TrendPullbackStrategy
 
