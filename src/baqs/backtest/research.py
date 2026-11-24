@@ -73,6 +73,7 @@ class S01ResearchReport:
     start_ms: int
     end_ms: int
     strategy_version: str
+    strategy_parameters: dict[str, str]
     reason: str | None
     warmup: dict[str, int]
     data_provenance: dict[str, object]
@@ -238,6 +239,19 @@ class S01ResearchService:
         self.funding_store = FundingStore(engine)
 
     @property
+    def strategy_parameters(self) -> dict[str, str]:
+        config = self.strategy.config
+        return {
+            "adx_min": _decimal_text(config.adx_min),
+            "long_rsi_min": _decimal_text(config.long_rsi_min),
+            "long_rsi_max": _decimal_text(config.long_rsi_max),
+            "short_rsi_min": _decimal_text(config.short_rsi_min),
+            "short_rsi_max": _decimal_text(config.short_rsi_max),
+            "volume_ratio_min": _decimal_text(config.volume_ratio_min),
+            "stop_atr_buffer": _decimal_text(config.stop_atr_buffer),
+        }
+
+    @property
     def cost_assumptions(self) -> dict[str, str]:
         return {
             "taker_fee_bps_each_side": _decimal_text(self.costs.taker_fee_bps),
@@ -260,6 +274,9 @@ class S01ResearchService:
             or (end_ms - start_ms) % INTERVAL_MS["1m"]
         ):
             raise ValueError("Research window must be a positive, 15m-aligned UTC interval")
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
+        if end_ms > now_ms:
+            raise BacktestUnavailable("EVALUATION_WINDOW_IN_FUTURE")
         execution_count = (end_ms - start_ms) // INTERVAL_MS["1m"]
         evaluation_15m_count = (end_ms - start_ms) // INTERVAL_MS["15m"]
         if not 1 <= execution_count <= MAX_EXECUTION_BARS:
@@ -421,6 +438,7 @@ class S01ResearchService:
                 start_ms=start_ms,
                 end_ms=end_ms,
                 strategy_version=self.strategy.config.strategy_version,
+                strategy_parameters=self.strategy_parameters,
                 reason=str(exc),
                 warmup={},
                 data_provenance={},
@@ -434,6 +452,7 @@ class S01ResearchService:
             start_ms=start_ms,
             end_ms=end_ms,
             strategy_version=self.strategy.config.strategy_version,
+            strategy_parameters=self.strategy_parameters,
             reason=None,
             warmup=inputs.warmup,
             data_provenance=inputs.provenance,
