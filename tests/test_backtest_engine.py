@@ -95,9 +95,7 @@ def test_long_trade_uses_next_minute_open_and_all_explicit_costs() -> None:
     assert trade.slippage_cost > 0
     assert trade.net_pnl == trade.gross_pnl - trade.fees - trade.funding_cost
     reconciliation_error = abs(
-        result.metrics.final_equity
-        - result.metrics.initial_equity
-        - trade.net_pnl
+        result.metrics.final_equity - result.metrics.initial_equity - trade.net_pnl
     )
     assert reconciliation_error < Decimal("1e-20")
 
