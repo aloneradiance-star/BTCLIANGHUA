@@ -79,18 +79,12 @@ def feature(
 
 
 def test_s01_long_trend_pullback_reclaim_signal() -> None:
-    previous_bar = candle(
-        "15m", BASE, open_="105", high="107", low="103", close="104"
-    )
-    current_bar = candle(
-        "15m", BASE + 900_000, open_="105", high="112", low="104", close="110"
-    )
+    previous_bar = candle("15m", BASE, open_="105", high="107", low="103", close="104")
+    current_bar = candle("15m", BASE + 900_000, open_="105", high="112", low="104", close="110")
     previous = feature("15m", BASE)
     current = feature("15m", BASE + 900_000)
     higher = feature("1h", 0, ema20="120", ema60="110")
-    signal = evaluate_s01_signal(
-        current_bar, previous_bar, current, previous, higher
-    )
+    signal = evaluate_s01_signal(current_bar, previous_bar, current, previous, higher)
     assert signal is not None
     assert signal.side == "LONG"
     assert signal.signal_time_ms == current_bar.close_ms
@@ -105,9 +99,7 @@ def test_s01_short_trend_pullback_rejection_signal() -> None:
         "15m", BASE + 900_000, open_="95", high="96", low="88", close="90"
     )
     previous = feature("15m", BASE, ema20="95", ema60="100", rsi="45")
-    current = feature(
-        "15m", BASE + 900_000, ema20="95", ema60="100", rsi="45"
-    )
+    current = feature("15m", BASE + 900_000, ema20="95", ema60="100", rsi="45")
     higher = feature("1h", 0, ema20="90", ema60="100")
     signal = evaluate_s01_signal(
         current_bar, previous_bar, current, previous, higher
@@ -129,9 +121,7 @@ def test_s01_short_trend_pullback_rejection_signal() -> None:
         ),
     ],
 )
-def test_s01_filters_weak_or_misaligned_setups(
-    current: FeatureRow, higher: FeatureRow
-) -> None:
+def test_s01_filters_weak_or_misaligned_setups(current: FeatureRow, higher: FeatureRow) -> None:
     previous_bar = candle(
         "15m", BASE, open_="105", high="107", low="103", close="104"
     )
@@ -139,10 +129,7 @@ def test_s01_filters_weak_or_misaligned_setups(
         "15m", BASE + 900_000, open_="105", high="112", low="104", close="110"
     )
     previous = feature("15m", BASE)
-    assert (
-        evaluate_s01_signal(current_bar, previous_bar, current, previous, higher)
-        is None
-    )
+    assert evaluate_s01_signal(current_bar, previous_bar, current, previous, higher) is None
 
 
 def test_future_higher_timeframe_feature_is_rejected() -> None:
