@@ -128,7 +128,7 @@ def test_full_2920_bar_15m_percentile_reference_is_contiguous(db_engine: Engine)
             "quote_volume": Decimal(100),
             "trade_count": 5,
             "is_final": True,
-            "source": "TEST_FIXTURE",
+            "source": "REST",
         }
         for i in range(n)
     ]
@@ -185,3 +185,44 @@ def test_wrong_exclusive_close_boundary_invalidates_readiness(db_engine: Engine)
     report = store.history_readiness("BTCUSDT", "1h", 4 * STEP, required_bars=3)
     assert report["status"] == "GAP"
     assert report["invalid_close_count"] == 1
+
+
+
+def test_missing_required_metadata_invalidates_readiness(db_engine: Engine) -> None:
+    store = CandleStore(db_engine)
+    for i in (1, 2, 3):
+        store.upsert(closed(i))
+    target = closed(2)
+    with db_engine.begin() as connection:
+        connection.execute(
+            update(Candle)
+            .where(
+                Candle.symbol == target.symbol,
+                Candle.timeframe == target.timeframe,
+                Candle.open_time == target.open_time,
+            )
+            .values(quote_volume=None)
+        )
+    report = store.history_readiness("BTCUSDT", "1h", 4 * STEP, required_bars=3)
+    assert report["status"] == "GAP"
+    assert report["invalid_metadata_count"] == 1
+
+
+def test_untrusted_source_invalidates_readiness(db_engine: Engine) -> None:
+    store = CandleStore(db_engine)
+    for i in (1, 2, 3):
+        store.upsert(closed(i))
+    target = closed(2)
+    with db_engine.begin() as connection:
+        connection.execute(
+            update(Candle)
+            .where(
+                Candle.symbol == target.symbol,
+                Candle.timeframe == target.timeframe,
+                Candle.open_time == target.open_time,
+            )
+            .values(source="FIXTURE")
+        )
+    report = store.history_readiness("BTCUSDT", "1h", 4 * STEP, required_bars=3)
+    assert report["status"] == "GAP"
+    assert report["invalid_metadata_count"] == 1

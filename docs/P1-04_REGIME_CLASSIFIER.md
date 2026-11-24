@@ -34,7 +34,7 @@ The runner uses UTC wall clock; keep the host NTP-synchronized or it will fail c
   close at or before the evaluation's 5m close.
 - 5m inputs must contain three finalized contiguous bars ending at the
   evaluated 5m close. Duplicate 5m observations do not update the gate twice.
-- No future 15m/1h bar may affect an earlier 5m classification.
+- No future 15m/1h bar may affect an earlier 5m classification. Readiness also rejects untrusted candle sources, missing quote-volume/trade-count metadata and incorrect exclusive close boundaries.
 - If missing history/indicators, return UNAVAILABLE rather than TRANSITION.
   TRANSITION is a valid **market state** only on otherwise healthy data.
 
@@ -123,4 +123,13 @@ examples, not live market observations):
   },
   "execution_enabled": false
 }
+```
+
+## Offline end-to-end fixture demo
+
+Run the deterministic no-network replay, including persistence, three distinct
+5m confirmations, current read-only state and duplicate idempotency:
+
+```bash
+python -m pytest tests/test_regime_service.py::test_end_to_end_range_switch_requires_three_5m_closes -q
 ```

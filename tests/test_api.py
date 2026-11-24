@@ -102,6 +102,7 @@ def test_regimes_are_scoped_to_requested_timeframe(db_engine: Engine) -> None:
         assert payload["timeframe"] == timeframe
         btc = payload["symbols"]["BTCUSDT"]
         assert btc["timeframe"] == timeframe
+        assert btc["status"] == "HISTORICAL_SNAPSHOT"
         assert btc["regime"] == expected_regime
         assert btc["features"]["timeframe_probe"] == timeframe
         eth = payload["symbols"]["ETHUSDT"]

@@ -83,6 +83,12 @@ def test_end_to_end_range_switch_requires_three_5m_closes(full_history: Engine) 
     assert all(out["features"]["signal_allowed"] is False for out in outputs)
     assert outputs[-1]["features"]["gate_state"]["confirmations"] == 0
     assert "STATE_SWITCH_CONFIRMED" in outputs[-1]["reasons"]
+    latest = service.latest(
+        "BTCUSDT",
+        clock_ms=ANCHOR_MS + 2 * FIVE_MIN + 1000,
+    )
+    assert latest["status"] == "READY"
+    assert latest["regime"] == "RANGE"
 
     # Same as-of observation cannot create a second snapshot or double advance.
     again = service.observe(
