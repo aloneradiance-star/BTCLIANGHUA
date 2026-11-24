@@ -14,9 +14,9 @@ broker, exchange adapter, order router, live signal service or proof of alpha.
 - Funding is mandatory as an explicit input. Each event contains the symbol,
   event timestamp, signed funding rate and contemporaneous mark price. A
   provider-supplied `FundingCoverage` lists the exact expected event timestamps
-  and asserts complete coverage over the entire backtest window. The supplied
-  events must exactly match that manifest. Empty events are accepted only when
-  the provider explicitly attests that the complete window has no events.
+  and asserts complete coverage over the exact backtest window boundaries.
+  The supplied events must exactly match that manifest. Empty events are accepted
+  only when the provider explicitly attests that the complete window has no events.
 - Fee and slippage assumptions are required values; no exchange fee tier,
   spread, fill quality or funding rate is silently invented.
 
@@ -36,7 +36,9 @@ A signal is generated only at a completed 15m close.
 3. Previous 15m close <= previous EMA20; current 15m low <= current EMA20
    and current close > current EMA20 (pullback and reclaim).
 4. RSI14 in [45, 65] and volume ratio >= 1.0.
-5. Initial stop = min(current low, previous low) - 0.25 * ATR14.
+5. The latest closed 1h feature must be less than 60 minutes old at the signal
+   boundary; missing or stale higher-timeframe context is rejected.
+6. Initial stop = min(current low, previous low) - 0.25 * ATR14.
 
 **Short** is symmetric: 1h/15m EMA20 < EMA60, current close below EMA60,
 ADX14 >= 23, previous close >= previous EMA20, current high >= current EMA20,

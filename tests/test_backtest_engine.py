@@ -208,3 +208,30 @@ def test_cost_and_risk_inputs_fail_closed() -> None:
         BacktestConfig(max_notional_fraction=Decimal("1.01"))
     with pytest.raises(ValueError):
         FundingCoverage(START, START + 120_000, (START + 60_000, START + 60_000), True)
+
+def test_funding_manifest_must_match_exact_backtest_window() -> None:
+    bars = [bar(0), bar(1), bar(2)]
+    coverage = FundingCoverage(
+        START - 60_000,
+        bars[-1].close_ms,
+        (),
+        True,
+    )
+    with pytest.raises(BacktestUnavailable, match="COVERAGE_WINDOW_MISMATCH"):
+        BacktestEngine().run(
+            bars,
+            [signal()],
+            [],
+            coverage,
+            CostModel(Decimal("10"), Decimal("5")),
+        )
+
+
+def test_mixed_strategy_versions_are_rejected() -> None:
+    bars = [bar(i) for i in range(16)]
+    mixed = [
+        signal("LONG", "90", START),
+        EntrySignal("BTCUSDT", START + 900_000, "LONG", Decimal(90), "S01-0.2"),
+    ]
+    with pytest.raises(BacktestUnavailable, match="MIXED_STRATEGY_VERSIONS"):
+        run(bars, mixed)

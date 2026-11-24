@@ -74,6 +74,8 @@ def evaluate_s01_signal(
         or previous.timeframe != "15m"
         or current.symbol != current_bar.symbol
         or previous.symbol != previous_bar.symbol
+        or previous.symbol != current.symbol
+        or current_bar.close_ms != current_bar.open_ms + 900_000
         or current.close_ms != current_bar.close_ms
         or previous.close_ms != previous_bar.close_ms
         or current_bar.open_ms != previous_bar.open_ms + 900_000
@@ -87,6 +89,8 @@ def evaluate_s01_signal(
         or higher.close_ms > current.close_ms
     ):
         raise ValueError("S01 higher-timeframe feature is future-dated or mismatched")
+    if current.close_ms - higher.close_ms >= 3_600_000:
+        raise ValueError("S01 higher-timeframe feature is stale")
 
     required_current = (
         current.ema20,
@@ -174,7 +178,7 @@ class S01TrendPullbackStrategy:
         bars1h: list[FinalCandle],
     ) -> list[EntrySignal]:
         if not bars15 or not bars1h:
-            return []
+            raise ValueError("S01 requires nonempty 15m and 1h history")
         if bars15[0].timeframe != "15m" or bars1h[0].timeframe != "1h":
             raise ValueError("S01 requires 15m signal bars and 1h trend bars")
         if bars15[0].symbol != bars1h[0].symbol:

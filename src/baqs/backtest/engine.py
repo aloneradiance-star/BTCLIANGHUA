@@ -246,8 +246,8 @@ def _validate_inputs(
 ) -> tuple[str, dict[int, EntrySignal], dict[int, FundingEvent]]:
     symbol = _validate_bars(bars)
     start_ms, end_ms = bars[0].open_ms, bars[-1].close_ms
-    if funding_coverage.start_ms > start_ms or funding_coverage.end_ms < end_ms:
-        raise BacktestUnavailable("FUNDING_COVERAGE_DOES_NOT_SPAN_BACKTEST")
+    if funding_coverage.start_ms != start_ms or funding_coverage.end_ms != end_ms:
+        raise BacktestUnavailable("FUNDING_COVERAGE_WINDOW_MISMATCH")
     expected = funding_coverage.expected_timestamps_ms
     events = sorted(funding_events, key=lambda event: event.timestamp_ms)
     actual = tuple(event.timestamp_ms for event in events)
@@ -263,6 +263,7 @@ def _validate_inputs(
         funding_by_time[event.timestamp_ms] = event
 
     signal_by_time: dict[int, EntrySignal] = {}
+    strategy_versions: set[str] = set()
     for signal in signals:
         if signal.symbol != symbol:
             raise BacktestUnavailable("SIGNAL_SYMBOL_MISMATCH")
@@ -272,6 +273,7 @@ def _validate_inputs(
             continue  # Closed at the sample boundary, but no next-minute fill exists.
         if signal.signal_time_ms > end_ms:
             raise BacktestUnavailable("SIGNAL_AFTER_BACKTEST_WINDOW")
+        strategy_versions.add(signal.strategy_version)
         if signal.signal_time_ms % 900_000:
             raise BacktestUnavailable("SIGNAL_NOT_AT_CLOSED_15M_BOUNDARY")
         if signal.signal_time_ms not in bar_opens:
@@ -279,6 +281,8 @@ def _validate_inputs(
         if signal.signal_time_ms in signal_by_time:
             raise BacktestUnavailable("DUPLICATE_SIGNAL_TIMESTAMP")
         signal_by_time[signal.signal_time_ms] = signal
+    if len(strategy_versions) > 1:
+        raise BacktestUnavailable("MIXED_STRATEGY_VERSIONS")
     return symbol, signal_by_time, funding_by_time
 
 
