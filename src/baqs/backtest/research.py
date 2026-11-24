@@ -6,9 +6,10 @@ context and a fingerprint-verified funding manifest. No source data is written.
 
 import argparse
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from typing import Any, cast
 from hashlib import sha256
 from typing import Literal
 
@@ -34,6 +35,7 @@ from baqs.market_data.schema import (
     CandleGap,
     FinalCandle,
     FundingGap,
+    InvalidCandle,
 )
 from baqs.models import Candle
 from baqs.settings import get_settings
@@ -204,8 +206,8 @@ def _json_value(value: object) -> object:
         return {str(key): _json_value(item) for key, item in value.items()}
     if isinstance(value, tuple | list):
         return [_json_value(item) for item in value]
-    if hasattr(value, "__dataclass_fields__"):
-        return _json_value(asdict(value))
+    if is_dataclass(value):
+        return _json_value(asdict(cast(Any, value)))
     return value
 
 
@@ -413,7 +415,7 @@ class S01ResearchService:
                 self.costs,
                 self.config,
             )
-        except (BacktestUnavailable, CandleGap, FundingGap, ValueError) as exc:
+        except (BacktestUnavailable, CandleGap, FundingGap, InvalidCandle, ValueError) as exc:
             return S01ResearchReport(
                 status="UNAVAILABLE",
                 symbol=symbol,
