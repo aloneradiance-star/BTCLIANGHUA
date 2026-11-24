@@ -165,7 +165,8 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
             default="5m",
             description=(
                 "Supported values: 1m, 5m, 15m, 1h. "
-                "The current verified classifier runs on 5m; other intervals expose historical snapshots."
+                "The current verified classifier runs on 5m; "
+                "other intervals expose historical snapshots."
             ),
         ),
     ) -> dict[str, object]:
