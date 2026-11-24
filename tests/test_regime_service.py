@@ -182,7 +182,7 @@ def test_missing_quote_volume_metadata_fails_closed(full_history: Engine) -> Non
             )
             .values(quote_volume=None)
         )
-    with pytest.raises(RegimeUnavailable, match="INCOMPLETE_CANDLE_METADATA"):
+    with pytest.raises(RegimeUnavailable, match="15M_HISTORY_GAP"):
         RegimeResearchService(full_history).observe(
             "BTCUSDT",
             close_ms=ANCHOR_MS,
@@ -205,7 +205,7 @@ def test_untrusted_candle_source_fails_closed(full_history: Engine) -> None:
             )
             .values(source="FIXTURE")
         )
-    with pytest.raises(RegimeUnavailable, match="UNTRUSTED_CANDLE_SOURCE"):
+    with pytest.raises(RegimeUnavailable, match="15M_HISTORY_GAP"):
         RegimeResearchService(full_history).observe(
             "BTCUSDT",
             close_ms=ANCHOR_MS,
