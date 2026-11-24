@@ -32,13 +32,32 @@ Official references:
 
 ## Manual collection
 
-1. Run the explicit 30-day public 1m backfill. The report contains the exact
-   anchored end and bar count; derive the half-open window as
-   `start_ms = anchored_end_ms - 43200 * 60000`, `end_ms = anchored_end_ms`.
+**Recommended one-command path** (opt-in; defaults to BTCUSDT and ETHUSDT, 43,200
+finalized 1m candles / 30 days each):
+
+```bash
+python -m baqs.market_data.prepare_backtest_data
+```
+
+The command runs the existing candle and funding collectors sequentially for
+each symbol, reuses the exact half-open UTC window anchored by the finalized
+candle backfill, verifies both persisted datasets, and prints one JSON report
+per symbol. A successful report has `readiness=READY`; it also includes
+`start_ms`, `end_ms`, candle/funding counts and created-versus-reused counts.
+It is safe to rerun after interruption because verified candle chunks and
+funding events are idempotent. To run a smaller research smoke test:
+
+```bash
+python -m baqs.market_data.prepare_backtest_data --symbols BTCUSDT --bars 1440
+```
+
+The lower-level collectors remain available when separate operation is needed:
+
+1. Run the public 1m candle backfill:
    ```bash
    python -m baqs.market_data.backfill --timeframe 1m --symbols BTCUSDT ETHUSDT
    ```
-2. Use those exact UTC millisecond boundaries for the funding history:
+2. Use the exact `start_ms` and `end_ms` printed by the candle report for funding:
    ```bash
    python -m baqs.market_data.funding_backfill --start-ms <START_MS> --end-ms <END_MS>
    ```
