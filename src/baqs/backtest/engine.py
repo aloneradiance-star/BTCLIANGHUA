@@ -463,9 +463,7 @@ class BacktestEngine:
                                 signal.side,
                                 slippage_rate,
                             )
-                            risk_per_unit = abs(fill - stop_exit_fill) + (
-                                fill + stop_exit_fill
-                            ) * fee_rate
+                            risk_per_unit = abs(fill - stop_exit_fill) + (fill + stop_exit_fill) * fee_rate
                             equity_at_entry = cash
                             risk_budget = equity_at_entry * config.risk_fraction
                             notional_cap = equity_at_entry * config.max_notional_fraction

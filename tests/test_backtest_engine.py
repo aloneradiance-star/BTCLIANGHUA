@@ -253,10 +253,9 @@ def test_short_risk_budget_includes_adverse_stop_exit_costs() -> None:
     fee_rate = Decimal("10") / Decimal("10000")
     slippage_rate = Decimal("5") / Decimal("10000")
     stop_exit_fill = Decimal("110") * (Decimal(1) + slippage_rate)
-    estimated_stop_loss = (
-        (stop_exit_fill - trade.entry_fill_price) * trade.quantity
-        + (stop_exit_fill + trade.entry_fill_price) * fee_rate * trade.quantity
-    )
+    estimated_stop_loss = (stop_exit_fill - trade.entry_fill_price) * trade.quantity + (
+        stop_exit_fill + trade.entry_fill_price
+    ) * fee_rate * trade.quantity
     risk_budget = config.initial_equity * config.risk_fraction
     assert estimated_stop_loss <= risk_budget + Decimal("1e-24")
 
