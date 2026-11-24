@@ -92,18 +92,12 @@ def test_s01_long_trend_pullback_reclaim_signal() -> None:
 
 
 def test_s01_short_trend_pullback_rejection_signal() -> None:
-    previous_bar = candle(
-        "15m", BASE, open_="96", high="98", low="94", close="97"
-    )
-    current_bar = candle(
-        "15m", BASE + 900_000, open_="95", high="96", low="88", close="90"
-    )
+    previous_bar = candle("15m", BASE, open_="96", high="98", low="94", close="97")
+    current_bar = candle("15m", BASE + 900_000, open_="95", high="96", low="88", close="90")
     previous = feature("15m", BASE, ema20="95", ema60="100", rsi="45")
     current = feature("15m", BASE + 900_000, ema20="95", ema60="100", rsi="45")
     higher = feature("1h", 0, ema20="90", ema60="100")
-    signal = evaluate_s01_signal(
-        current_bar, previous_bar, current, previous, higher
-    )
+    signal = evaluate_s01_signal(current_bar, previous_bar, current, previous, higher)
     assert signal is not None
     assert signal.side == "SHORT"
     assert signal.stop_price == Decimal("98.50")
@@ -122,23 +116,15 @@ def test_s01_short_trend_pullback_rejection_signal() -> None:
     ],
 )
 def test_s01_filters_weak_or_misaligned_setups(current: FeatureRow, higher: FeatureRow) -> None:
-    previous_bar = candle(
-        "15m", BASE, open_="105", high="107", low="103", close="104"
-    )
-    current_bar = candle(
-        "15m", BASE + 900_000, open_="105", high="112", low="104", close="110"
-    )
+    previous_bar = candle("15m", BASE, open_="105", high="107", low="103", close="104")
+    current_bar = candle("15m", BASE + 900_000, open_="105", high="112", low="104", close="110")
     previous = feature("15m", BASE)
     assert evaluate_s01_signal(current_bar, previous_bar, current, previous, higher) is None
 
 
 def test_future_higher_timeframe_feature_is_rejected() -> None:
-    previous_bar = candle(
-        "15m", BASE, open_="105", high="107", low="103", close="104"
-    )
-    current_bar = candle(
-        "15m", BASE + 900_000, open_="105", high="112", low="104", close="110"
-    )
+    previous_bar = candle("15m", BASE, open_="105", high="107", low="103", close="104")
+    current_bar = candle("15m", BASE + 900_000, open_="105", high="112", low="104", close="110")
     with pytest.raises(ValueError, match="future-dated"):
         evaluate_s01_signal(
             current_bar,
@@ -157,12 +143,8 @@ def test_latest_completed_feature_never_uses_future_hour() -> None:
 
 
 def test_missing_feature_warmup_returns_no_signal() -> None:
-    previous_bar = candle(
-        "15m", BASE, open_="105", high="107", low="103", close="104"
-    )
-    current_bar = candle(
-        "15m", BASE + 900_000, open_="105", high="112", low="104", close="110"
-    )
+    previous_bar = candle("15m", BASE, open_="105", high="107", low="103", close="104")
+    current_bar = candle("15m", BASE + 900_000, open_="105", high="112", low="104", close="110")
     current = replace(feature("15m", BASE + 900_000), atr14=None)
     signal = evaluate_s01_signal(
         current_bar,
