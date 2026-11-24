@@ -2,6 +2,7 @@
 
 import argparse
 import json
+from collections import Counter
 from dataclasses import asdict, dataclass, is_dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal, cast
@@ -138,6 +139,10 @@ def _aggregate_scenario(
         raise ValueError("Cannot aggregate incomplete walk-forward scenario results")
     completed = [result for result in results if result is not None]
     trades = [trade for result in completed for trade in result.trades]
+    skipped_counts = [len(result.skipped_signals) for result in completed]
+    skipped_by_reason = Counter(
+        signal.reason for result in completed for signal in result.skipped_signals
+    )
     trade_count = len(trades)
     wins = sum(trade.net_pnl > ZERO for trade in trades)
     positive_pnl = sum((trade.net_pnl for trade in trades if trade.net_pnl > ZERO), ZERO)
@@ -167,6 +172,9 @@ def _aggregate_scenario(
         "fold_count": len(folds),
         "trade_counts_by_fold": trade_counts,
         "trade_count": trade_count,
+        "skipped_signal_count": sum(skipped_counts),
+        "skipped_signal_counts_by_fold": skipped_counts,
+        "skipped_signal_counts_by_reason": dict(sorted(skipped_by_reason.items())),
         "gross_pnl": gross_pnl,
         "net_pnl": net_pnl,
         "total_fees": fees,
@@ -200,6 +208,8 @@ class WalkForwardResearchService:
         scenarios = tuple(cost_scenarios)
         if len(scenarios) < 2 or len({scenario.name for scenario in scenarios}) != len(scenarios):
             raise ValueError("At least two uniquely named cost scenarios are required")
+        if len({(scenario.taker_fee_bps, scenario.slippage_bps) for scenario in scenarios}) < 2:
+            raise ValueError("At least two distinct fee and slippage combinations are required")
         if type(fold_count) is not int or not 3 <= fold_count <= 12:
             raise ValueError("Walk-forward fold_count must be 3..12")
         if type(minimum_trades_per_fold) is not int or not 1 <= minimum_trades_per_fold <= 1000:
@@ -226,7 +236,12 @@ class WalkForwardResearchService:
                     costs=CostModel(scenario.taker_fee_bps, scenario.slippage_bps),
                     config=self.config,
                     strategy_config=strategy_config,
-                ).run(symbol, fold.start_ms, fold.end_ms)
+                ).run(
+                    symbol,
+                    fold.start_ms,
+                    fold.end_ms,
+                    include_terminal_signal=fold == folds[-1],
+                )
                 cells.append(WalkForwardCell(fold.index, scenario.name, report))
                 if report.status != "READY":
                     return WalkForwardReport(

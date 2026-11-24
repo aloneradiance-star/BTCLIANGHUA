@@ -73,11 +73,10 @@ python -m baqs.backtest.walk_forward \
   --cost-scenario stress:10:10
 ```
 
-Cost scenario format is `NAME:TAKER_FEE_BPS:SLIPPAGE_BPS`. At least two
-uniquely named scenarios are required. The example values are illustrative
-only; enter assumptions appropriate to the account/venue and do not infer
-the user's actual fee tier. S01-0.1 thresholds are frozen; this runner does
-not optimize parameters on test folds.
+Cost scenario format is `NAME:TAKER_FEE_BPS:SLIPPAGE_BPS`. Scenario names must
+be unique, with at least two distinct fee and slippage combinations. The
+example values illustrate the format. Supply explicit costs for the research
+scenario. S01-0.1 uses frozen thresholds throughout the evaluation.
 
 The runner evaluates BTCUSDT and ETHUSDT separately. Every fold reuses
 P2-03's read-only loader, exact 1m execution data, 2,920 preceding 15m bars,
@@ -98,6 +97,9 @@ candles/funding are never modified and reports are not persisted.
 - Aggregate PnL is the sum of independent fold PnL; each fold starts with
   its own configured initial equity. It is **not** a compounded portfolio
   return. Worst-fold drawdown and duration-weighted exposure are reported.
+- The scenario summary counts skipped signals by fold and reason. An interior
+  boundary signal belongs to the later fold. A signal at the evaluation end
+  is recorded as `NO_NEXT_1M_EXECUTION_BAR` in the final fold.
 - 1m OHLC cannot reconstruct intrabar paths, partial fills, order-book
   liquidity, market impact, liquidation or margin tiers. Close-to-close
   drawdown can understate intrabar risk.

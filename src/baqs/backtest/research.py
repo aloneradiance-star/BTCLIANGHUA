@@ -407,8 +407,15 @@ class S01ResearchService:
             warmup=warmup,
         )
 
-    def run(self, symbol: str, start_ms: int, end_ms: int) -> S01ResearchReport:
-        """Run an exact historical sample; return UNAVAILABLE for any data-quality gap."""
+    def run(
+        self,
+        symbol: str,
+        start_ms: int,
+        end_ms: int,
+        *,
+        include_terminal_signal: bool = True,
+    ) -> S01ResearchReport:
+        """Replay one sample; omit the terminal signal when a following fold owns it."""
         if (
             symbol not in SYMBOLS
             or type(start_ms) is not int
@@ -425,6 +432,8 @@ class S01ResearchService:
                 list(inputs.signal_bars_15m),
                 list(inputs.context_bars_1h),
             )
+            if not include_terminal_signal:
+                signals = [signal for signal in signals if signal.signal_time_ms != end_ms]
             result = BacktestEngine().run(
                 inputs.execution_bars,
                 signals,

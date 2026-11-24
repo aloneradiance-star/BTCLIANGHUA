@@ -126,6 +126,15 @@ def test_cost_scenarios_require_explicit_valid_assumptions() -> None:
         CostScenario("invalid", Decimal("-1"), Decimal("2"))
 
 
+def test_cost_scenarios_require_distinct_assumption_pairs(db_engine: Engine) -> None:
+    scenarios = [
+        CostScenario("base", Decimal("5.0"), Decimal("2")),
+        CostScenario("renamed", Decimal("5"), Decimal("2.00")),
+    ]
+    with pytest.raises(ValueError, match="distinct fee and slippage combinations"):
+        WalkForwardResearchService(db_engine, cost_scenarios=scenarios)
+
+
 def test_walk_forward_cost_sensitivity_is_deterministic_and_read_only(
     db_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -136,11 +145,12 @@ def test_walk_forward_cost_sensitivity_is_deterministic_and_read_only(
         return [
             EntrySignal(
                 symbol=bars15[0].symbol,
-                signal_time_ms=evaluation_start,
+                signal_time_ms=signal_time_ms,
                 side="LONG",
                 stop_price=Decimal(90),
                 strategy_version=self.config.strategy_version,
             )
+            for signal_time_ms in (evaluation_start, bars15[-1].close_ms)
         ]
 
     monkeypatch.setattr(S01TrendPullbackStrategy, "generate_signals", signals)
@@ -164,6 +174,20 @@ def test_walk_forward_cost_sensitivity_is_deterministic_and_read_only(
     assert len(first.cells) == 6
     assert first.aggregate_by_scenario["low"]["trade_counts_by_fold"] == [1, 1, 1]
     assert first.aggregate_by_scenario["stress"]["trade_counts_by_fold"] == [1, 1, 1]
+    for cell in first.cells:
+        result = cell.report.result
+        assert result is not None
+        assert result.trades[0].entry_time_ms == START + (cell.fold_index - 1) * DAY
+        if cell.fold_index < first.fold_count:
+            assert not result.skipped_signals
+        else:
+            assert len(result.skipped_signals) == 1
+            assert result.skipped_signals[0].signal_time_ms == END
+            assert result.skipped_signals[0].reason == "NO_NEXT_1M_EXECUTION_BAR"
+    for aggregate in first.aggregate_by_scenario.values():
+        assert aggregate["skipped_signal_count"] == 1
+        assert aggregate["skipped_signal_counts_by_fold"] == [0, 0, 1]
+        assert aggregate["skipped_signal_counts_by_reason"] == {"NO_NEXT_1M_EXECUTION_BAR": 1}
     assert first.aggregate_by_scenario["low"]["robustness_assessment"] == "NOT_MADE"
     low_net = first.aggregate_by_scenario["low"]["net_pnl"]
     stress_net = first.aggregate_by_scenario["stress"]["net_pnl"]
