@@ -13,7 +13,7 @@ import httpx
 
 from baqs.db import make_engine
 from baqs.logging_config import configure_logging
-from baqs.market_data.history import DEFAULT_BARS, PublicHistoryBackfill
+from baqs.market_data.history import MAX_BARS_BY_TIMEFRAME, DEFAULT_BARS, PublicHistoryBackfill
 from baqs.market_data.repository import CandleStore
 from baqs.market_data.rest import PUBLIC_BASE_URL, PublicFuturesREST
 from baqs.market_data.schema import SYMBOLS
@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--bars",
         type=int,
-        help="Default 43200 for 1m, 2920 for 15m, 120 for 1h; max 129600",
+        help="Defaults: 43200 (1m), 2920 (15m), 120 (1h); 90-day caps: 129600, 8640, 2160",
     )
     parser.add_argument(
         "--start-ms",

@@ -17,7 +17,13 @@ MIN_15M_BARS = 2920  # Operational minimum includes the classifier warm-up buffe
 MIN_1H_BARS = 120  # Classifier readiness uses a 120-bar 1h buffer.
 DEFAULT_BARS = {"1m": 43_200, "15m": 2920, "1h": 120}
 MINIMUM_BARS = {"1m": 1, "15m": MIN_15M_BARS, "1h": MIN_1H_BARS}
-MAX_BACKFILL_BARS = 129_600  # Explicitly bounded to 90 days of 1m candles
+MAX_BACKFILL_DAYS = 90
+MAX_BACKFILL_BARS = 129_600  # Absolute 1m cap; per-timeframe limits are below.
+MAX_BARS_BY_TIMEFRAME = {
+    timeframe: MAX_BACKFILL_DAYS * 24 * 60 // (step // 60_000)
+    for timeframe, step in INTERVAL_MS.items()
+    if timeframe in DEFAULT_BARS
+}
 
 
 class PublicHistoryReader(Protocol):
@@ -85,12 +91,11 @@ class PublicHistoryBackfill:
 
         step = INTERVAL_MS[timeframe]
         minimum = MINIMUM_BARS[timeframe]
+        maximum = MAX_BARS_BY_TIMEFRAME[timeframe]
         if start_ms is None:
             requested = DEFAULT_BARS[timeframe] if bars is None else bars
-            if type(requested) is not int or not minimum <= requested <= MAX_BACKFILL_BARS:
-                raise ValueError(
-                    f"{timeframe} backfill requires {minimum}..{MAX_BACKFILL_BARS} bars"
-                )
+            if type(requested) is not int or not minimum <= requested <= maximum:
+                raise ValueError(f"{timeframe} backfill requires {minimum}..{maximum} bars")
         else:
             assert end_ms is not None
             if (
@@ -103,10 +108,8 @@ class PublicHistoryBackfill:
             ):
                 raise ValueError("Explicit historical range must be positive and interval-aligned")
             requested = (end_ms - start_ms) // step
-            if not minimum <= requested <= MAX_BACKFILL_BARS:
-                raise ValueError(
-                    f"{timeframe} range requires {minimum}..{MAX_BACKFILL_BARS} bars"
-                )
+            if not minimum <= requested <= maximum:
+                raise ValueError(f"{timeframe} range requires {minimum}..{maximum} bars")
 
         server_ms = await self.reader.server_time_ms()
         if type(server_ms) is not int or server_ms < 0:
