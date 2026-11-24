@@ -104,7 +104,7 @@ def test_api_shows_readiness_not_fake_market_signals(db_engine: Engine) -> None:
     expected = response.json()["symbols"]["BTCUSDT"]["15m"]
     assert expected["status"] == "NO_DATA"
     assert expected["required_bars"] == 2920
-    assert response.json()["symbols"]["BTCUSDT"]["1h"]["required_bars"] == 60
+    assert response.json()["symbols"]["BTCUSDT"]["1h"]["required_bars"] == 120
     assert "orders" not in response.json()
 
 

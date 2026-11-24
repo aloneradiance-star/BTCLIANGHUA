@@ -100,7 +100,7 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
         """Read-only historical completeness gate for future classifier."""
         now_ms = int(datetime.now(UTC).timestamp() * 1000)
         store = CandleStore(_engine(request))
-        required = {"15m": 2920, "1h": 60}
+        required = {"15m": 2920, "1h": 120}
         return {
             "observed_at": datetime.now(UTC).isoformat(),
             "symbols": {

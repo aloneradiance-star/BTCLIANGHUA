@@ -14,6 +14,7 @@ from baqs.market_data.schema import INTERVAL_MS, SYMBOLS, CandleGap, FinalCandle
 
 logger = logging.getLogger(__name__)
 MIN_15M_BARS = 2920  # Issue #9 operational minimum; math requires 2901 for RV percentile.
+MIN_1H_BARS = 120  # Classifier readiness uses a 120-bar 1h buffer.
 DEFAULT_BARS = {"15m": 2920, "1h": 120}
 MAX_BACKFILL_BARS = 5000
 
@@ -75,7 +76,7 @@ class PublicHistoryBackfill:
         if symbol not in SYMBOLS or timeframe not in DEFAULT_BARS:
             raise ValueError("Only BTC/ETH 15m and 1h public history is supported")
         requested = DEFAULT_BARS[timeframe] if bars is None else bars
-        minimum = MIN_15M_BARS if timeframe == "15m" else 60
+        minimum = MIN_15M_BARS if timeframe == "15m" else MIN_1H_BARS
         if type(requested) is not int or not minimum <= requested <= MAX_BACKFILL_BARS:
             raise ValueError(f"{timeframe} backfill requires {minimum}..{MAX_BACKFILL_BARS} bars")
 
