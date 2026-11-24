@@ -161,15 +161,14 @@ def test_invalid_strategy_parameters_rejected() -> None:
     with pytest.raises(ValueError):
         S01Config(long_rsi_min=Decimal(70), long_rsi_max=Decimal(60))
 
+
 def test_s01_rejects_mixed_symbol_candles_and_features() -> None:
     previous_bar = replace(
         candle("15m", BASE, open_="105", high="107", low="103", close="104"),
         symbol="ETHUSDT",
     )
     previous = replace(feature("15m", BASE), symbol="ETHUSDT")
-    current_bar = candle(
-        "15m", BASE + 900_000, open_="105", high="112", low="104", close="110"
-    )
+    current_bar = candle("15m", BASE + 900_000, open_="105", high="112", low="104", close="110")
     with pytest.raises(ValueError, match="alignment"):
         evaluate_s01_signal(
             current_bar,
@@ -181,12 +180,8 @@ def test_s01_rejects_mixed_symbol_candles_and_features() -> None:
 
 
 def test_s01_rejects_stale_higher_timeframe_context() -> None:
-    previous_bar = candle(
-        "15m", 7_200_000, open_="105", high="107", low="103", close="104"
-    )
-    current_bar = candle(
-        "15m", 8_100_000, open_="105", high="112", low="104", close="110"
-    )
+    previous_bar = candle("15m", 7_200_000, open_="105", high="107", low="103", close="104")
+    current_bar = candle("15m", 8_100_000, open_="105", high="112", low="104", close="110")
     with pytest.raises(ValueError, match="stale"):
         evaluate_s01_signal(
             current_bar,
