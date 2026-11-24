@@ -1,6 +1,7 @@
 """Final-candle engine tests: temporal consistency, anti-lookahead, 30d warm-up."""
 
 from decimal import Decimal
+from time import perf_counter
 
 import pytest
 
@@ -58,7 +59,10 @@ def test_warmup_none_and_decimal_safe_serialization() -> None:
 
 
 def test_15m_30day_percentiles_wait_for_full_past_window() -> None:
+    started = perf_counter()
     features = compute_features(series(2903))
+    elapsed = perf_counter() - started
+    assert elapsed < 10.0  # generous CI smoke bound for a full 30-day 15m window
     # Bollinger first valid index 19; 30d=2880 previous 15m bars.
     assert features[2898].bb_width_percentile_30d is None
     assert features[2899].bb_width_percentile_30d is not None

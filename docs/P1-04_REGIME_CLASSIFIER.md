@@ -18,9 +18,11 @@ The loop is deliberately **not** auto-started with the read-only web API.
 Use only one classifier writer per DB. A unique regime snapshot index prevents
 duplicates but this is not a distributed lock.
 
-`GET /api/v1/market/regimes` shows BTCUSDT and ETHUSDT independent state
-snapshots. Returns UNAVAILABLE with specific reason for missing/gapped or stale
-data; does not infer market certainty from an outdated historical snapshot.
+`GET /api/v1/market/regimes?timeframe=5m` shows BTCUSDT and ETHUSDT independent
+verified classifier states. The accepted `1m`, `15m` and `1h` values expose only
+explicitly labelled historical snapshots; the current v0.1 classifier runs on 5m.
+When no snapshot exists, the API first checks feed readiness and reports a specific timeframe history reason; only complete, fresh history with no observation returns NO_CLASSIFICATION. Existing snapshots are also rechecked against current feed readiness. Returns UNAVAILABLE with a specific reason for missing/gapped or stale data.
+The runner uses UTC wall clock; keep the host NTP-synchronized or it will fail closed.
 
 ## Required inputs and clocks
 - Every evaluation occurs on a **closed** 5m UTC candle. Confirmation uses
@@ -32,7 +34,7 @@ data; does not infer market certainty from an outdated historical snapshot.
   close at or before the evaluation's 5m close.
 - 5m inputs must contain three finalized contiguous bars ending at the
   evaluated 5m close. Duplicate 5m observations do not update the gate twice.
-- No future 15m/1h bar may affect an earlier 5m classification.
+- No future 15m/1h bar may affect an earlier 5m classification. Readiness also rejects untrusted candle sources, missing quote-volume/trade-count metadata and incorrect exclusive close boundaries.
 - If missing history/indicators, return UNAVAILABLE rather than TRANSITION.
   TRANSITION is a valid **market state** only on otherwise healthy data.
 
@@ -86,3 +88,48 @@ out-of-order observations and corrupt gate state fail closed.
 - A CI-green pure classifier does not prove robust real-time trading quality.
   Before Phase 2, do controlled market-data soak tests and verify classifier
   outputs across historical bull/bear/range/volatility phases.
+
+## Example read-only response
+
+Illustrative shape for `GET /api/v1/market/regimes?timeframe=5m` (values are
+examples, not live market observations):
+
+```json
+{
+  "observed_at": "2026-11-18T12:15:01+00:00",
+  "timeframe": "5m",
+  "symbols": {
+    "BTCUSDT": {
+      "status": "READY",
+      "symbol": "BTCUSDT",
+      "regime": "TRANSITION",
+      "timeframe": "5m",
+      "candle_close_time": "2026-11-18T12:15:00+00:00",
+      "classifier_version": "rules-0.1",
+      "features": {
+        "candidate": "TRANSITION",
+        "signal_allowed": false,
+        "probability_calibrated": false
+      },
+      "reasons": ["NO_VALID_MARKET_STATE"],
+      "execution_enabled": false
+    },
+    "ETHUSDT": {
+      "status": "UNAVAILABLE",
+      "symbol": "ETHUSDT",
+      "timeframe": "5m",
+      "reason": "NO_CLASSIFICATION"
+    }
+  },
+  "execution_enabled": false
+}
+```
+
+## Offline end-to-end fixture demo
+
+Run the deterministic no-network replay, including persistence, three distinct
+5m confirmations, current read-only state and duplicate idempotency:
+
+```bash
+python -m pytest tests/test_regime_service.py::test_end_to_end_range_switch_requires_three_5m_closes -q
+```
