@@ -188,7 +188,7 @@ def test_duplicate_signals_at_one_boundary_are_rejected() -> None:
 
 
 def test_signal_at_final_exclusive_boundary_is_not_executable() -> None:
-    bars = [bar(0), bar(1), bar(2)]
+    bars = [bar(i) for i in range(15)]
     # A signal at end_ms has no following execution minute and must not be filled.
     result = run(bars, [signal(timestamp=bars[-1].close_ms)])
     assert result.trades == ()
