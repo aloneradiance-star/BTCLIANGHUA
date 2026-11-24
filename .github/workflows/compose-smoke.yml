@@ -26,8 +26,9 @@ jobs:
         run: |
           set -euo pipefail
           base_url=http://127.0.0.1:8000
-          curl --fail --silent --show-error --retry 20 --retry-connrefused --retry-delay 2 \
-            --max-time 5 "$base_url/openapi.json" > "$RUNNER_TEMP/baqs-openapi.json"
+          curl --fail --silent --show-error --retry 20 --retry-all-errors --retry-delay 2 \
+            --retry-max-time 45 --max-time 5 --output "$RUNNER_TEMP/baqs-openapi.json" \
+            "$base_url/openapi.json"
           jq -e '.paths | length > 0 and all(.[]; keys == ["get"])' \
             "$RUNNER_TEMP/baqs-openapi.json" > /dev/null
 
