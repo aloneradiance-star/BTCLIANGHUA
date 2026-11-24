@@ -57,14 +57,10 @@ def seed_history(
     store = CandleStore(engine)
     warmup_15m_start = START - 2920 * QUARTER
     bars_15m = [
-        candle("BTCUSDT", "15m", warmup_15m_start + i * QUARTER, step=QUARTER)
-        for i in range(2922)
+        candle("BTCUSDT", "15m", warmup_15m_start + i * QUARTER, step=QUARTER) for i in range(2922)
     ]
     warmup_1h_start = START - 120 * HOUR
-    bars_1h = [
-        candle("BTCUSDT", "1h", warmup_1h_start + i * HOUR, step=HOUR)
-        for i in range(120)
-    ]
+    bars_1h = [candle("BTCUSDT", "1h", warmup_1h_start + i * HOUR, step=HOUR) for i in range(120)]
     if add_future_hour:
         bars_1h.append(candle("BTCUSDT", "1h", START, step=HOUR))
     bars_1m = [
