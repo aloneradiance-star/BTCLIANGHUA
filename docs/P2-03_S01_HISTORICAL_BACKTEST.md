@@ -33,13 +33,39 @@ For a requested 15m-aligned half-open UTC window `[start_ms, end_ms)`:
 
 ## Manual command
 
-First ensure the P2-02 public dataset has been backfilled and both 1m execution
-and funding coverage are READY for the requested period. Apply schema migrations
-before running the collector or the backtest:
+First apply schema migrations:
 
 ```bash
 alembic upgrade head
 ```
+
+The runner requires persisted 1m execution candles, 15m signal candles, 1h
+context candles and a funding manifest for the **same exact 15m-aligned sample
+window**. The P2-02 1m+funding convenience command does not backfill the 15m/1h
+warm-up, and a wider funding manifest is intentionally not substituted for an
+exact-window manifest.
+
+For a one-day sample, choose `END_MS` as the `anchored_end_ms` returned by a
+15m backfill (it is a closed 15m boundary), then set
+`START_MS = END_MS - 1440 * 60000`. Backfill enough context and execution data:
+
+```bash
+python -m baqs.market_data.backfill --timeframe 1m --bars 1500
+python -m baqs.market_data.backfill --timeframe 15m --bars 3016
+python -m baqs.market_data.backfill --timeframe 1h --bars 144
+```
+
+The counts above cover a 24-hour evaluation plus 2,920 preceding 15m bars and
+120 preceding closed 1h bars. For a different sample duration, increase the
+requested history counts to include the entire evaluation interval plus those
+warm-up bars. Use the exact same `START_MS` and `END_MS` to certify funding:
+
+```bash
+python -m baqs.market_data.funding_backfill --start-ms <START_MS> --end-ms <END_MS>
+```
+
+A successful funding backfill certifies only that exact half-open interval.
+The one-day sample must fit inside the persisted 1m history window.
 
 Example command (5 bps taker fee and 2 bps adverse slippage are illustrative
 assumptions only; replace them with the fee tier and slippage scenario being
