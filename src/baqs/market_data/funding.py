@@ -29,7 +29,7 @@ def _milliseconds(value: datetime) -> int:
 
 
 def _fingerprint(record: FundingRateRecord) -> str:
-    return sha256("|".join(record.fingerprint()).encode("utf-8")).hexdigest()
+    return sha256("|".join(map(str, record.fingerprint())).encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
