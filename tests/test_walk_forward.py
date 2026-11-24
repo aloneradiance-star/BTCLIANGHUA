@@ -168,6 +168,7 @@ def test_walk_forward_refuses_to_call_too_few_trades_robust(
     db_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _seed_walk_forward(db_engine)
+
     def no_signals(self, bars15, bars1h):
         return []
 
@@ -193,6 +194,7 @@ def test_walk_forward_fails_closed_without_each_fold_funding_manifest(
     with Session(db_engine) as session:
         session.execute(delete(FundingCoverageRecord))
         session.commit()
+
     def no_signals(self, bars15, bars1h):
         return []
 
