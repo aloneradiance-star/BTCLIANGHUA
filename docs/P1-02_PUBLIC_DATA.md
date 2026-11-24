@@ -31,6 +31,8 @@ The research runner does not start automatically when the API service starts. It
 
 A clean start fetches a bounded last-120-bar REST history for each feed after establishing the WebSocket. On reconnect, re-fetch overlapping finalized history and repair detected gaps. Bounded repair limits prevent unbounded burst traffic after prolonged outages. When the range exceeds the budget, ingestion stays unhealthy and requires controlled manual backfill.
 
+Normal WebSocket closures and connection failures both delay the next attempt. Consecutive retries start at one second and increase up to 30 seconds. Processing a finalized candle resets the delay. When the REST clock only covers part of a gap, the collector retries reconciliation before storing the later WebSocket candle.
+
 `GET /api/v1/market/health` exposes per-feed health read from database. `GET /api/v1/market/candles` returns finalized bars only. No price predictions or trades are returned.
 
 ## API references (reviewed November 2026)
