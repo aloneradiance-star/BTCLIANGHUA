@@ -11,9 +11,9 @@ from sqlalchemy.engine import Engine
 from baqs.backtest.engine import BacktestConfig, CostModel
 from baqs.backtest.research import (
     MAX_EXECUTION_BARS,
+    WARMUP_15M_BARS,
     S01ResearchReport,
     S01ResearchService,
-    WARMUP_15M_BARS,
 )
 from baqs.db import make_engine
 from baqs.market_data.schema import INTERVAL_MS, SYMBOLS
