@@ -21,7 +21,7 @@ duplicates but this is not a distributed lock.
 `GET /api/v1/market/regimes?timeframe=5m` shows BTCUSDT and ETHUSDT independent
 verified classifier states. The accepted `1m`, `15m` and `1h` values expose only
 explicitly labelled historical snapshots; the current v0.1 classifier runs on 5m.
-Returns UNAVAILABLE with a specific reason for missing/gapped or stale data.
+When no snapshot exists, the API first checks feed readiness and reports a specific timeframe history reason; only complete, fresh history with no observation returns NO_CLASSIFICATION. Existing snapshots are also rechecked against current feed readiness. Returns UNAVAILABLE with a specific reason for missing/gapped or stale data.
 The runner uses UTC wall clock; keep the host NTP-synchronized or it will fail closed.
 
 ## Required inputs and clocks

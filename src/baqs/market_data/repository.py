@@ -168,6 +168,7 @@ class CandleStore:
         )
         invalid_metadata_count = sum(
             quote_volume is None
+            or not quote_volume.is_finite()
             or quote_volume < 0
             or type(trade_count) is not int
             or trade_count < 0

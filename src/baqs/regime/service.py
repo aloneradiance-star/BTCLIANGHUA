@@ -214,6 +214,20 @@ class RegimeResearchService:
         with Session(self.engine) as session:
             last = self._last_snapshot(session, symbol)
             if last is None:
+                for timeframe, count in REQUIRED.items():
+                    end = clock_ms // INTERVAL_MS[timeframe] * INTERVAL_MS[timeframe]
+                    readiness = self.store.history_readiness(
+                        symbol,
+                        timeframe,
+                        end,
+                        required_bars=count,
+                        require_latest=True,
+                    )
+                    if readiness["status"] != "READY":
+                        return {
+                            "status": "UNAVAILABLE",
+                            "reason": f"{timeframe.upper()}_HISTORY_{readiness['status']}",
+                        }
                 return {"status": "UNAVAILABLE", "reason": "NO_CLASSIFICATION"}
             close_ms = _as_milliseconds(last.candle_close_time)
             if close_ms > clock_ms or clock_ms - close_ms >= 2 * FIVE_MIN_MS:

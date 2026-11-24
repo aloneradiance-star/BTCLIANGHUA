@@ -112,7 +112,7 @@ def test_regimes_are_scoped_to_requested_timeframe(db_engine: Engine) -> None:
     default_payload = client.get("/api/v1/market/regimes").json()
     assert default_payload["timeframe"] == "5m"
     assert default_payload["symbols"]["BTCUSDT"]["status"] == "UNAVAILABLE"
-    assert default_payload["symbols"]["BTCUSDT"]["reason"] == "NO_CLASSIFICATION"
+    assert default_payload["symbols"]["BTCUSDT"]["reason"] == "5M_HISTORY_NO_DATA"
 
 
 def test_regimes_reject_unsupported_timeframe(db_engine: Engine) -> None:

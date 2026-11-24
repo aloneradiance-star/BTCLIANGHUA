@@ -58,7 +58,9 @@ def test_no_sufficient_data_is_unavailable_not_transition(db_engine: Engine) -> 
     service = RegimeResearchService(db_engine)
     with pytest.raises(RegimeUnavailable, match="5M_HISTORY"):
         service.observe("BTCUSDT", close_ms=ANCHOR_MS, clock_ms=ANCHOR_MS + 1)
-    assert service.latest("BTCUSDT", clock_ms=ANCHOR_MS)["status"] == "UNAVAILABLE"
+    latest = service.latest("BTCUSDT", clock_ms=ANCHOR_MS)
+    assert latest["status"] == "UNAVAILABLE"
+    assert latest["reason"] == "5M_HISTORY_NO_DATA"
 
 
 def test_end_to_end_range_switch_requires_three_5m_closes(full_history: Engine) -> None:
@@ -231,3 +233,13 @@ def test_corrupt_gate_state_fails_closed_on_latest_and_duplicate(full_history: E
     assert latest["reason"] == "CORRUPT_PERSISTED_GATE_STATE"
     with pytest.raises(RegimeUnavailable, match="CORRUPT_PERSISTED_GATE_STATE"):
         service.observe("BTCUSDT", close_ms=ANCHOR_MS, clock_ms=ANCHOR_MS + 1000)
+
+
+
+def test_ready_history_without_snapshot_is_still_unavailable(full_history: Engine) -> None:
+    latest = RegimeResearchService(full_history).latest(
+        "BTCUSDT",
+        clock_ms=ANCHOR_MS + 2 * FIVE_MIN + 1000,
+    )
+    assert latest["status"] == "UNAVAILABLE"
+    assert latest["reason"] == "NO_CLASSIFICATION"
