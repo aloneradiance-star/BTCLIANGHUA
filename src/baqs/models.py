@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKeyConstraint,
     Index,
+    Integer,
     Numeric,
     String,
     UniqueConstraint,
@@ -79,5 +80,49 @@ class RegimeSnapshot(Base):
     reasons: Mapped[list[str]] = mapped_column(json_type, nullable=False)
     classifier_version: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class FundingRate(Base):
+    """Immutable public funding event; rate_type is part of the natural key."""
+
+    __tablename__ = "funding_rates"
+    __table_args__ = (
+        CheckConstraint("mark_price > 0", name="mark_price_positive"),
+        CheckConstraint("rate_type IN ('Regular','Special')", name="valid_rate_type"),
+        Index("ix_funding_rates_recent", "symbol", "funding_time"),
+    )
+
+    symbol: Mapped[str] = mapped_column(String(16), primary_key=True)
+    funding_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    rate_type: Mapped[str] = mapped_column(String(16), primary_key=True)
+    funding_rate: Mapped[Decimal] = mapped_column(Numeric(20, 12), nullable=False)
+    mark_price: Mapped[Decimal] = mapped_column(Numeric(28, 12), nullable=False)
+    source: Mapped[str] = mapped_column(String(48), nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class FundingCoverageRecord(Base):
+    """Immutable completeness manifest for an exact [start_time, end_time) window."""
+
+    __tablename__ = "funding_coverage"
+    __table_args__ = (
+        CheckConstraint("end_time > start_time", name="valid_window"),
+        CheckConstraint("event_count >= 0", name="event_count_nonnegative"),
+        Index("ix_funding_coverage_recent", "symbol", "end_time"),
+    )
+
+    symbol: Mapped[str] = mapped_column(String(16), primary_key=True)
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    expected_timestamps_ms: Mapped[list[int]] = mapped_column(json_type, nullable=False)
+    expected_event_fingerprints: Mapped[list[str]] = mapped_column(json_type, nullable=False)
+    event_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    complete: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    source: Mapped[str] = mapped_column(String(48), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

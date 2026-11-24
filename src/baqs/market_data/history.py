@@ -14,8 +14,9 @@ from baqs.market_data.schema import INTERVAL_MS, SYMBOLS, CandleGap, FinalCandle
 
 logger = logging.getLogger(__name__)
 MIN_15M_BARS = 2901  # First 30-day realized-vol percentile at index 2900.
-DEFAULT_BARS = {"15m": 2920, "1h": 120}
-MAX_BACKFILL_BARS = 5000
+DEFAULT_BARS = {"1m": 43_200, "15m": 2920, "1h": 120}
+MINIMUM_BARS = {"1m": 1, "15m": MIN_15M_BARS, "1h": 60}
+MAX_BACKFILL_BARS = 50_000
 
 
 class PublicHistoryReader(Protocol):
@@ -73,9 +74,9 @@ class PublicHistoryBackfill:
         bars: int | None = None,
     ) -> BackfillReport:
         if symbol not in SYMBOLS or timeframe not in DEFAULT_BARS:
-            raise ValueError("Only BTC/ETH 15m and 1h public history is supported")
+            raise ValueError("Only BTC/ETH 1m, 15m and 1h public history is supported")
         requested = DEFAULT_BARS[timeframe] if bars is None else bars
-        minimum = MIN_15M_BARS if timeframe == "15m" else 60
+        minimum = MINIMUM_BARS[timeframe]
         if type(requested) is not int or not minimum <= requested <= MAX_BACKFILL_BARS:
             raise ValueError(f"{timeframe} backfill requires {minimum}..{MAX_BACKFILL_BARS} bars")
 
@@ -123,10 +124,8 @@ class PublicHistoryBackfill:
                         "REST history returned mismatched, out-of-order or incomplete bars"
                     )
             fetched += len(segment)
-            for candle in segment:
-                outcome = self.store.upsert(candle)
-                if outcome == "CREATED":
-                    created += 1
+            outcomes = self.store.upsert_many(segment)
+            created += outcomes.count("CREATED")
 
             verification = self.store.history_readiness(
                 symbol,

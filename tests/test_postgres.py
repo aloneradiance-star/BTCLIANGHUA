@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import create_engine, delete, insert, select
 
-from baqs.models import Candle
+from baqs.models import Candle, FundingRate
 
 
 @pytest.mark.skipif(
@@ -44,6 +44,35 @@ def test_postgresql_numeric_precision_and_utc() -> None:
             ).one()
             assert result[0] == price
             assert result[1].utcoffset().total_seconds() == 0
+            funding_time = datetime(2026, 11, 17, 16, 0, tzinfo=UTC)
+            funding_rate = Decimal("0.000123456789")
+            mark_price = Decimal("95000.123456789012")
+            conn.execute(
+                insert(FundingRate).values(
+                    symbol="BTCUSDT",
+                    funding_time=funding_time,
+                    rate_type="Regular",
+                    funding_rate=funding_rate,
+                    mark_price=mark_price,
+                    source="POSTGRES_CI",
+                )
+            )
+            funding = conn.execute(
+                select(FundingRate.funding_rate, FundingRate.mark_price).where(
+                    FundingRate.symbol == "BTCUSDT",
+                    FundingRate.funding_time == funding_time,
+                    FundingRate.rate_type == "Regular",
+                )
+            ).one()
+            assert funding[0] == funding_rate
+            assert funding[1] == mark_price
+            conn.execute(
+                delete(FundingRate).where(
+                    FundingRate.symbol == "BTCUSDT",
+                    FundingRate.funding_time == funding_time,
+                    FundingRate.rate_type == "Regular",
+                )
+            )
             conn.execute(
                 delete(Candle).where(
                     Candle.symbol == "BTCUSDT",

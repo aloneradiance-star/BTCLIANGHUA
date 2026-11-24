@@ -6,7 +6,12 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from baqs.db import Base
-from baqs.models import Candle, RegimeSnapshot  # noqa: F401 - register metadata
+from baqs.models import (  # noqa: F401 - register metadata
+    Candle,
+    FundingCoverageRecord,
+    FundingRate,
+    RegimeSnapshot,
+)
 from baqs.settings import get_settings
 
 config = context.config

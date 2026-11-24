@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--bars",
         type=int,
-        help="Default 2920 for 15m, 120 for 1h; max 5000",
+        help="Default 43200 for 1m, 2920 for 15m, 120 for 1h; max 50000",
     )
     parser.add_argument(
         "--chunk-bars",

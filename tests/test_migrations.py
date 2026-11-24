@@ -21,7 +21,7 @@ def test_migration_upgrade_and_downgrade(tmp_path: Path, monkeypatch) -> None:
 
         engine = create_engine(url)
         tables = set(inspect(engine).get_table_names())
-        assert {"alembic_version", "candles", "regime_snapshots"} <= tables
+        assert {"alembic_version", "candles", "regime_snapshots", "funding_rates", "funding_coverage"} <= tables
         engine.dispose()
 
         command.downgrade(config, "base")
@@ -29,6 +29,8 @@ def test_migration_upgrade_and_downgrade(tmp_path: Path, monkeypatch) -> None:
         tables = set(inspect(engine).get_table_names())
         assert "candles" not in tables
         assert "regime_snapshots" not in tables
+        assert "funding_rates" not in tables
+        assert "funding_coverage" not in tables
         engine.dispose()
     finally:
         get_settings.cache_clear()

@@ -91,6 +91,7 @@ class FundingEvent:
     timestamp_ms: int
     rate: Decimal
     mark_price: Decimal
+    rate_type: str = "Regular"
 
     def __post_init__(self) -> None:
         if (
@@ -100,6 +101,7 @@ class FundingEvent:
             or not self.rate.is_finite()
             or not self.mark_price.is_finite()
             or self.mark_price <= ZERO
+            or self.rate_type not in {"Regular", "Special"}
         ):
             raise ValueError("Invalid funding event or mark-price timestamp")
 
@@ -122,7 +124,7 @@ class FundingCoverage:
             or self.end_ms <= self.start_ms
             or type(self.complete) is not bool
             or not self.complete
-            or tuple(sorted(set(expected))) != expected
+            or tuple(sorted(expected)) != expected
             or any(
                 type(timestamp) is not int
                 or timestamp < self.start_ms
@@ -243,24 +245,24 @@ def _validate_inputs(
     signals: Sequence[EntrySignal],
     funding_events: Sequence[FundingEvent],
     funding_coverage: FundingCoverage,
-) -> tuple[str, dict[int, EntrySignal], dict[int, FundingEvent]]:
+) -> tuple[str, dict[int, EntrySignal], dict[int, list[FundingEvent]]]:
     symbol = _validate_bars(bars)
     start_ms, end_ms = bars[0].open_ms, bars[-1].close_ms
     if funding_coverage.start_ms != start_ms or funding_coverage.end_ms != end_ms:
         raise BacktestUnavailable("FUNDING_COVERAGE_WINDOW_MISMATCH")
     expected = funding_coverage.expected_timestamps_ms
-    events = sorted(funding_events, key=lambda event: event.timestamp_ms)
+    events = sorted(funding_events, key=lambda event: (event.timestamp_ms, event.rate_type))
     actual = tuple(event.timestamp_ms for event in events)
     if actual != expected:
         raise BacktestUnavailable("FUNDING_EVENTS_DO_NOT_MATCH_COMPLETENESS_MANIFEST")
-    funding_by_time: dict[int, FundingEvent] = {}
+    funding_by_time: dict[int, list[FundingEvent]] = {}
     bar_opens = {bar.open_ms for bar in bars}
     for event in events:
         if event.symbol != symbol:
             raise BacktestUnavailable("FUNDING_SYMBOL_MISMATCH")
         if event.timestamp_ms not in bar_opens:
             raise BacktestUnavailable("FUNDING_EVENT_NOT_ALIGNED_TO_EXECUTION_BAR")
-        funding_by_time[event.timestamp_ms] = event
+        funding_by_time.setdefault(event.timestamp_ms, []).append(event)
 
     signal_by_time: dict[int, EntrySignal] = {}
     strategy_versions: set[str] = set()
@@ -395,10 +397,10 @@ class BacktestEngine:
             had_position_at_open = position is not None
 
             # Funding is assessed before any entry at this minute boundary.
-            event = funding_by_time.get(bar.open_ms)
-            if position is not None and event is not None:
-                if bar.open_ms > position.entry_time_ms:
-                    side_sign = ONE if position.signal.side == "LONG" else -ONE
+            events = funding_by_time.get(bar.open_ms, [])
+            if position is not None and events and bar.open_ms > position.entry_time_ms:
+                side_sign = ONE if position.signal.side == "LONG" else -ONE
+                for event in events:
                     funding_cost = side_sign * position.quantity * event.mark_price * event.rate
                     position.funding_cost += funding_cost
                     cash -= funding_cost

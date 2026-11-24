@@ -236,3 +236,29 @@ def test_mixed_strategy_versions_are_rejected() -> None:
     ]
     with pytest.raises(BacktestUnavailable, match="MIXED_STRATEGY_VERSIONS"):
         run(bars, mixed)
+
+
+def test_regular_and_special_funding_at_same_boundary_are_both_applied() -> None:
+    bars = [
+        bar(0),
+        bar(1, open_="100", high="125", low="99", close="120"),
+        bar(2),
+    ]
+    funding_time = START + 60_000
+    events = [
+        FundingEvent("BTCUSDT", funding_time, Decimal(".001"), Decimal(100)),
+        FundingEvent(
+            "BTCUSDT",
+            funding_time,
+            Decimal(".0005"),
+            Decimal(101),
+            rate_type="Special",
+        ),
+    ]
+    result = run(
+        bars,
+        [signal()],
+        events=events,
+        expected=(funding_time, funding_time),
+    )
+    assert result.trades[0].funding_cost > Decimal(".14")

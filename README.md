@@ -84,3 +84,21 @@ No HTTP write endpoint, private exchange API, live order or leverage is present.
 P1-02A does not yet provide historical 1m execution bars or historical funding
 and mark-price events; use synthetic fixtures until the public-data follow-up
 is complete. A CI pass is not a profitability result.
+
+## P2-02 / Public historical backtest data
+
+Manual public 1m execution-history backfill (default 43,200 bars / 30 days):
+```bash
+python -m baqs.market_data.backfill --timeframe 1m --symbols BTCUSDT ETHUSDT
+```
+Use the exact `start_ms` and `anchored_end_ms` printed in the candle backfill
+report for the matching funding window:
+```bash
+python -m baqs.market_data.funding_backfill --start-ms <START_MS> --end-ms <END_MS>
+```
+The official public funding endpoint supplies `fundingRate`, `fundingTime`,
+associated `markPrice` and `rateType`. Readiness is exposed at
+`GET /api/v1/market/backtest-readiness?start_ms=...&end_ms=...`.
+Missing 1m candles, missing funding rows, altered source fingerprints or an
+incomplete coverage manifest keep the result UNAVAILABLE. No private API or
+trading order path is introduced.
