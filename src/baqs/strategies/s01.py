@@ -49,9 +49,7 @@ class S01Config:
             raise ValueError("Invalid S01 research parameters")
 
 
-def latest_completed_feature(
-    features: list[FeatureRow], as_of_close_ms: int
-) -> FeatureRow | None:
+def latest_completed_feature(features: list[FeatureRow], as_of_close_ms: int) -> FeatureRow | None:
     """Return the most recent feature whose candle is closed by the as-of boundary."""
     close_times = [feature.close_ms for feature in features]
     if any(right <= left for left, right in zip(close_times, close_times[1:], strict=False)):
@@ -130,10 +128,7 @@ def evaluate_s01_signal(
         and config.long_rsi_min <= current.rsi14 <= config.long_rsi_max
     )
     if long_trend and long_pullback:
-        stop = (
-            min(current_bar.low, previous_bar.low)
-            - current.atr14 * config.stop_atr_buffer
-        )
+        stop = min(current_bar.low, previous_bar.low) - current.atr14 * config.stop_atr_buffer
         if ZERO < stop < current_bar.close:
             return EntrySignal(
                 current.symbol,
@@ -155,10 +150,7 @@ def evaluate_s01_signal(
         and config.short_rsi_min <= current.rsi14 <= config.short_rsi_max
     )
     if short_trend and short_pullback:
-        stop = (
-            max(current_bar.high, previous_bar.high)
-            + current.atr14 * config.stop_atr_buffer
-        )
+        stop = max(current_bar.high, previous_bar.high) + current.atr14 * config.stop_atr_buffer
         if stop > current_bar.close:
             return EntrySignal(
                 current.symbol,
