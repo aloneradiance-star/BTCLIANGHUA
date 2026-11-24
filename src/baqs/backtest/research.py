@@ -223,15 +223,17 @@ class S01ResearchService:
         engine: Engine,
         *,
         costs: CostModel,
-        config: BacktestConfig = BacktestConfig(),
-        strategy_config: S01Config = S01Config(),
+        config: BacktestConfig | None = None,
+        strategy_config: S01Config | None = None,
     ) -> None:
-        if config.max_notional_fraction > Decimal(1):
+        resolved_config = config if config is not None else BacktestConfig()
+        resolved_strategy = strategy_config if strategy_config is not None else S01Config()
+        if resolved_config.max_notional_fraction > Decimal(1):
             raise ValueError("P2-03 does not permit leverage or notional above 1x")
         self.engine = engine
         self.costs = costs
-        self.config = config
-        self.strategy = S01TrendPullbackStrategy(strategy_config)
+        self.config = resolved_config
+        self.strategy = S01TrendPullbackStrategy(resolved_strategy)
         self.candle_store = CandleStore(engine)
         self.funding_store = FundingStore(engine)
 
