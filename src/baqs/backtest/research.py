@@ -9,9 +9,8 @@ import json
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, cast
 from hashlib import sha256
-from typing import Literal
+from typing import Any, Literal, cast
 
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
