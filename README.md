@@ -115,3 +115,14 @@ associated `markPrice` and `rateType`. Readiness is exposed at
 Missing 1m candles, missing funding rows, altered source fingerprints or an
 incomplete coverage manifest keep the result UNAVAILABLE. No private API or
 trading order path is introduced.
+
+## P2-03 / S01 historical research replay
+
+See [the historical replay guide](docs/P2-03_S01_HISTORICAL_BACKTEST.md) for
+the exact data window, indicator warm-up, funding manifest, and
+`python -m baqs.backtest.research` command with explicit costs.
+Run the offline acceptance tests with:
+
+```bash
+python -m pytest -q tests/test_s01_research.py
+```
