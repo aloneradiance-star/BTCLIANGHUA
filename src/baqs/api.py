@@ -7,14 +7,18 @@ from datetime import UTC, datetime
 from typing import cast
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
-from sqlalchemy import Engine, select, text
+from sqlalchemy import Engine, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from baqs.db import make_engine
 from baqs.logging_config import configure_logging
 from baqs.market_data.funding import FundingStore
-from baqs.market_data.repository import CandleStore
+from baqs.market_data.repository import (
+    MAX_HISTORY_BARS_BY_TIMEFRAME,
+    CandleStore,
+    MarketStreamStore,
+)
 from baqs.market_data.schema import INTERVAL_MS
 from baqs.models import Candle, RegimeSnapshot
 from baqs.regime.service import RegimeResearchService
@@ -54,9 +58,19 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
 
     @app.get("/api/v1/health")
     def health(request: Request, response: Response) -> dict[str, object]:
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
         try:
-            with _engine(request).connect() as conn:
-                conn.execute(text("SELECT 1"))
+            database = _engine(request)
+            with database.connect() as conn:
+                conn.execute(select(Candle).limit(0))
+                conn.execute(select(RegimeSnapshot).limit(0))
+            store = CandleStore(database)
+            candles_ready = all(
+                store.health(symbol, timeframe, now_ms)["status"] == "READY"
+                for symbol in SYMBOLS
+                for timeframe in TIMEFRAMES
+            )
+            ready = MarketStreamStore(database).health()["status"] == "CONNECTED" and candles_ready
         except (SQLAlchemyError, ImportError, OSError):
             response.status_code = 503
             return {
@@ -65,14 +79,6 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
                 "market_data": "UNAVAILABLE",
                 "execution_enabled": False,
             }
-        now_ms = int(datetime.now(UTC).timestamp() * 1000)
-        store = CandleStore(_engine(request))
-        checks = [
-            store.health(symbol, timeframe, now_ms)["status"]
-            for symbol in SYMBOLS
-            for timeframe in TIMEFRAMES
-        ]
-        ready = all(check == "READY" for check in checks)
         if not ready:
             response.status_code = 503
         return {
@@ -84,10 +90,13 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
 
     @app.get("/api/v1/market/health")
     def market_health(request: Request) -> dict[str, object]:
-        now_ms = int(datetime.now(UTC).timestamp() * 1000)
-        store = CandleStore(_engine(request))
+        observed_at = datetime.now(UTC)
+        now_ms = int(observed_at.timestamp() * 1000)
+        database = _engine(request)
+        store = CandleStore(database)
         return {
-            "observed_at": datetime.now(UTC).isoformat(),
+            "observed_at": observed_at.isoformat(),
+            "collector": MarketStreamStore(database).health(),
             "feeds": {
                 symbol: {
                     timeframe: store.health(symbol, timeframe, now_ms) for timeframe in INTERVAL_MS
@@ -128,26 +137,25 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
         end_ms: int = Query(..., gt=0),
     ) -> dict[str, object]:
         """Read-only gate for exact 1m execution and funding-history coverage."""
-        if (
-            start_ms % 60_000
-            or end_ms % 60_000
-            or end_ms <= start_ms
-            or (end_ms - start_ms) // 60_000 > 50_000
-        ):
+        step = INTERVAL_MS["1m"]
+        maximum_bars = MAX_HISTORY_BARS_BY_TIMEFRAME["1m"]
+        required_bars = (end_ms - start_ms) // step
+        if start_ms % step or end_ms % step or not 1 <= required_bars <= maximum_bars:
             raise HTTPException(
                 status_code=422,
-                detail="Backtest window must be 1m-aligned and contain 1..50000 bars",
+                detail=f"Backtest window must be 1m-aligned and contain 1..{maximum_bars} bars",
             )
         engine = _engine(request)
         candles_store = CandleStore(engine)
         funding_store = FundingStore(engine)
-        required_bars = (end_ms - start_ms) // 60_000
         symbols: dict[str, object] = {}
         for symbol in SYMBOLS:
             execution = candles_store.history_readiness(
                 symbol, "1m", end_ms, required_bars=required_bars, require_latest=False
             )
-            funding = funding_store.coverage_readiness(symbol, start_ms, end_ms)
+            funding = funding_store.coverage_readiness(
+                symbol, start_ms, end_ms, require_minute_aligned=True
+            )
             ready = execution["status"] == "READY" and funding["status"] == "READY"
             symbols[symbol] = {
                 "status": "READY" if ready else "UNAVAILABLE",

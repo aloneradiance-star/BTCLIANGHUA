@@ -3,12 +3,16 @@
 import asyncio
 from decimal import Decimal
 
+import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
+from baqs.api import create_app
 from baqs.market_data.funding import FundingStore
 from baqs.market_data.prepare_backtest_data import PublicBacktestDataPreparer
 from baqs.market_data.repository import CandleStore
-from baqs.market_data.schema import FinalCandle, FundingRateRecord
+from baqs.market_data.schema import FinalCandle, FundingGap, FundingRateRecord
+from baqs.settings import Settings
 
 MINUTE = 60_000
 ANCHOR = 120 * MINUTE
@@ -17,9 +21,10 @@ ANCHOR = 120 * MINUTE
 class StubReader:
     """One deterministic public source for both collectors."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, funding_offset_ms: int = 0) -> None:
         self.candle_requests = 0
         self.funding_requests = 0
+        self.funding_offset_ms = funding_offset_ms
 
     async def server_time_ms(self) -> int:
         return ANCHOR
@@ -70,7 +75,7 @@ class StubReader:
         return [
             FundingRateRecord(
                 symbol,
-                start_ms + 30 * MINUTE,
+                start_ms + 30 * MINUTE + self.funding_offset_ms,
                 Decimal("0.001"),
                 Decimal(100),
                 "Regular",
@@ -113,3 +118,39 @@ def test_one_command_prepares_exact_shared_window_and_is_idempotent(
         assert reader.funding_requests == 2
 
     asyncio.run(run())
+
+
+def test_off_minute_funding_is_archived_but_window_cannot_be_replayed(db_engine: Engine) -> None:
+    start_ms = ANCHOR - 60 * MINUTE
+    event_ms = start_ms + 30 * MINUTE + 1
+    reader = StubReader(funding_offset_ms=1)
+    funding_store = FundingStore(db_engine)
+    preparer = PublicBacktestDataPreparer(
+        reader,
+        CandleStore(db_engine),
+        funding_store,
+        chunk_bars=60,
+        funding_pause_seconds=0,
+    )
+    with pytest.raises(FundingGap, match="OFF_MINUTE_EVENTS"):
+        asyncio.run(preparer.run("BTCUSDT", bars=60))
+    snapshot = funding_store.load_window("BTCUSDT", start_ms, ANCHOR)
+    assert snapshot.expected_timestamps_ms == (event_ms,)
+    assert snapshot.events[0].funding_time_ms == event_ms
+    assert snapshot.events[0].mark_price == Decimal(100)
+
+    with TestClient(
+        create_app(
+            settings=Settings(_env_file=None, database_url="sqlite:///:memory:"),
+            engine=db_engine,
+        )
+    ) as client:
+        response = client.get(
+            "/api/v1/market/backtest-readiness",
+            params={"start_ms": start_ms, "end_ms": ANCHOR},
+        )
+    assert response.status_code == 200
+    symbol = response.json()["symbols"]["BTCUSDT"]
+    assert symbol["execution_1m"]["status"] == "READY"
+    assert symbol["funding"]["status"] == "OFF_MINUTE_EVENTS"
+    assert symbol["status"] == "UNAVAILABLE"

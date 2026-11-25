@@ -21,8 +21,10 @@ subscribe to private user streams, submit orders, or start automatically.
   bounded pagination, exponential retry, and honours numeric `Retry-After`
   values on HTTP 429.
 - A full-page boundary is queried at its exact timestamp before advancing.
-  If a Regular/Special event sharing that timestamp was split by pagination,
-  the collector fails closed rather than silently skipping it.
+  A split event, changed funding rate or changed associated mark price
+  invalidates the fetch and prevents completeness certification.
+  A server retry delay over 60 seconds aborts the fetch so an operator can
+  resume after the full requested wait.
 - Funding events are **not** assumed to occur every eight hours. Returned
   timestamps and rate types are the source of truth.
 
@@ -33,6 +35,9 @@ Official references:
 ## Manual collection
 
 Before the first run, start the configured PostgreSQL database, set `BAQS_DATABASE_URL` (or `.env`), and apply the checked-in schema migrations with `alembic upgrade head`. The collector intentionally does not create or migrate production tables automatically.
+The `0003_public_backtest` revision joins the collector and funding schemas.
+Databases already at either earlier revision advance to that same head
+while retaining their stored rows.
 
 **Recommended one-command path** (opt-in; defaults to BTCUSDT and ETHUSDT, 43,200
 finalized 1m candles / 30 days each):
@@ -90,6 +95,10 @@ The lower-level collectors remain available when separate operation is needed:
 - `GET /api/v1/market/backtest-readiness` is read-only and reports both 1m
   candle continuity and exact funding-manifest readiness for BTC/ETH. It never
   enables execution.
+- The archive preserves exact funding timestamps in milliseconds. A verified
+  archive with events between minute boundaries reports `OFF_MINUTE_EVENTS`
+  for backtesting. The current simulator requires minute-aligned events, so
+  preparation and the API withhold backtest readiness for that window.
 - The verified funding snapshot can be converted to P2-01 engine inputs by
   mapping each record to `FundingEvent(symbol, funding_time_ms, funding_rate,
   mark_price, rate_type)` and using the exact timestamp tuple in

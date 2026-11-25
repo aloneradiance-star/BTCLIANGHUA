@@ -2,8 +2,8 @@
 
 import asyncio
 from dataclasses import replace
-from datetime import UTC, datetime
-from decimal import Decimal
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal, localcontext
 
 import httpx
 import pytest
@@ -19,6 +19,7 @@ from baqs.market_data.schema import (
     FundingGap,
     FundingRateRecord,
     InvalidCandle,
+    MarketDataError,
 )
 from baqs.models import FundingRate
 from baqs.settings import Settings
@@ -54,7 +55,10 @@ def row(
     }
 
 
-def test_funding_rest_paginates_inclusive_api_with_last_time_plus_one_ms() -> None:
+@pytest.mark.parametrize("last_offset_ms", [0, 1])
+def test_funding_rest_paginates_inclusive_api_with_last_time_plus_one_ms(
+    last_offset_ms: int,
+) -> None:
     calls: list[tuple[int, int, int]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -70,7 +74,9 @@ def test_funding_rest_paginates_inclusive_api_with_last_time_plus_one_ms() -> No
         if start == 120_000 and end == 120_000:
             return httpx.Response(200, json=[row(120_000)])
         if start == 120_001 and end == END - 1:
-            return httpx.Response(200, json=[row(180_000, rate="-.001", mark="99")])
+            return httpx.Response(
+                200, json=[row(180_000 + last_offset_ms, rate="-.001", mark="99")]
+            )
         raise AssertionError(f"Unexpected funding page: {request.url}")
 
     async def run() -> None:
@@ -81,7 +87,11 @@ def test_funding_rest_paginates_inclusive_api_with_last_time_plus_one_ms() -> No
             events = await PublicFuturesREST(client).fetch_funding_range(
                 "BTCUSDT", START, END, page_size=2, max_pages=5, pause_seconds=0
             )
-        assert [item.funding_time_ms for item in events] == [START, 120_000, 180_000]
+        assert [item.funding_time_ms for item in events] == [
+            START,
+            120_000,
+            180_000 + last_offset_ms,
+        ]
         assert events[0].mark_price == Decimal(100)
         assert events[-1].funding_rate == Decimal("-.001")
         assert calls == [
@@ -150,6 +160,88 @@ def test_funding_rest_fails_closed_when_page_splits_same_timestamp() -> None:
                 )
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize(("rate", "mark"), [(".002", "100"), (".001", "100.001")])
+def test_funding_rest_rejects_changed_values_at_page_boundary(rate: str, mark: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/fapi/v1/time":
+            return httpx.Response(200, json={"serverTime": SERVER})
+        start = int(request.url.params["startTime"])
+        if start == START:
+            return httpx.Response(200, json=[row(START), row(120_000)])
+        if start == 120_000:
+            return httpx.Response(200, json=[row(120_000, rate=rate, mark=mark)])
+        return httpx.Response(200, json=[])
+
+    async def run() -> None:
+        async with httpx.AsyncClient(
+            base_url="https://fapi.binance.com",
+            transport=httpx.MockTransport(handler),
+        ) as client:
+            with pytest.raises(FundingGap, match="boundary.*values"):
+                await PublicFuturesREST(client).fetch_funding_range(
+                    "BTCUSDT", START, END, page_size=2, pause_seconds=0
+                )
+
+    asyncio.run(run())
+
+
+def test_funding_rest_stops_when_retry_after_exceeds_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    funding_requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal funding_requests
+        if request.url.path == "/fapi/v1/time":
+            return httpx.Response(200, json={"serverTime": SERVER})
+        funding_requests += 1
+        if funding_requests == 1:
+            return httpx.Response(429, headers={"Retry-After": "120"})
+        return httpx.Response(200, json=[])
+
+    async def no_wait(_delay: float) -> None:
+        pass
+
+    async def run() -> None:
+        async with httpx.AsyncClient(
+            base_url="https://fapi.binance.com",
+            transport=httpx.MockTransport(handler),
+        ) as client:
+            with pytest.raises(MarketDataError, match="Retry-After"):
+                await PublicFuturesREST(client).fetch_funding_range("BTCUSDT", START, END)
+
+    monkeypatch.setattr("baqs.market_data.rest.asyncio.sleep", no_wait)
+    asyncio.run(run())
+    assert funding_requests == 1
+
+
+def test_funding_fingerprint_retains_all_digits_under_caller_decimal_settings() -> None:
+    first = event(120_000, rate=".000123456789", mark="95000.123456789012")
+    changed = replace(first, mark_price=Decimal("95000.123456789013"))
+    expected = first.fingerprint()
+    with localcontext() as context:
+        context.prec = 6
+        assert first.fingerprint() == expected
+        assert changed.fingerprint() != expected
+
+
+def test_submillisecond_funding_timestamp_invalidates_persisted_manifest(db_engine: Engine) -> None:
+    store = FundingStore(db_engine)
+    record = event(120_000)
+    store.upsert(record)
+    store.complete_window("BTCUSDT", START, END, [record])
+    timestamp = datetime.fromtimestamp(120, tz=UTC)
+    with db_engine.begin() as connection:
+        connection.execute(
+            update(FundingRate)
+            .where(FundingRate.symbol == record.symbol, FundingRate.funding_time == timestamp)
+            .values(funding_time=timestamp + timedelta(microseconds=1))
+        )
+    assert store.coverage_readiness("BTCUSDT", START, END)["status"] == "GAP"
+    with pytest.raises(FundingGap, match="timestamp"):
+        store.load_window("BTCUSDT", START, END)
 
 
 def test_funding_store_preserves_regular_and_special_same_time_events(db_engine: Engine) -> None:

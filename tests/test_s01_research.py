@@ -1,7 +1,7 @@
 """Read-only S01 data adapter, causal context and deterministic replay tests."""
 
-from datetime import UTC, datetime
-from decimal import Decimal
+from datetime import UTC, datetime, timedelta
+from decimal import ROUND_DOWN, Decimal, Inexact, localcontext
 
 import pytest
 from sqlalchemy import func, select, update
@@ -29,6 +29,7 @@ def candle(
     open_ms: int,
     *,
     step: int,
+    open_price: str = "100",
     high: str = "101",
     low: str = "99",
     close: str = "100",
@@ -38,7 +39,7 @@ def candle(
         timeframe,
         open_ms,
         open_ms + step,
-        Decimal(100),
+        Decimal(open_price),
         Decimal(high),
         Decimal(low),
         Decimal(close),
@@ -82,11 +83,16 @@ def seed_history(
     store.upsert_many(bars_1m)
 
 
-def seed_funding(engine: Engine, *, include_special: bool = True) -> None:
+def seed_funding(
+    engine: Engine,
+    *,
+    include_special: bool = True,
+    funding_time_ms: int = START + MINUTE,
+) -> None:
     records = [
         FundingRateRecord(
             "BTCUSDT",
-            START + MINUTE,
+            funding_time_ms,
             Decimal("0.001"),
             Decimal(100),
             "Regular",
@@ -96,7 +102,7 @@ def seed_funding(engine: Engine, *, include_special: bool = True) -> None:
         records.append(
             FundingRateRecord(
                 "BTCUSDT",
-                START + MINUTE,
+                funding_time_ms,
                 Decimal("0.0005"),
                 Decimal(101),
                 "Special",
@@ -161,6 +167,124 @@ def test_successful_replay_is_deterministic_and_performs_zero_database_writes(
     assert first.data_provenance["completed_context_1h"]["latest_completed_close_ms"] == START
     assert report_json(first) == report_json(second)
     assert table_counts(db_engine) == before
+
+
+def test_real_s01_signal_replay_is_independent_of_caller_decimal_context(db_engine: Engine) -> None:
+    def priced_bar(
+        timeframe: str,
+        open_ms: int,
+        step: int,
+        price: Decimal,
+        *,
+        low: str | None = None,
+        high: str | None = None,
+    ) -> FinalCandle:
+        return candle(
+            "BTCUSDT",
+            timeframe,
+            open_ms,
+            step=step,
+            open_price=str(price),
+            close=str(price),
+            low=low if low is not None else str(price - Decimal("0.02")),
+            high=high if high is not None else str(price + Decimal("0.02")),
+        )
+
+    store = CandleStore(db_engine)
+    warmup = [
+        priced_bar("15m", START + (i - 2920) * QUARTER, QUARTER, Decimal(100) + Decimal(i) / 100)
+        for i in range(2919)
+    ]
+    store.upsert_many(
+        warmup
+        + [
+            priced_bar("15m", START - QUARTER, QUARTER, Decimal("129.00")),
+            priced_bar("15m", START, QUARTER, Decimal("129.11"), low="129.00"),
+            priced_bar("15m", START + QUARTER, QUARTER, Decimal("129.20")),
+        ]
+    )
+    store.upsert_many(
+        [
+            priced_bar("1h", START + (i - 120) * HOUR, HOUR, Decimal(100) + Decimal(i) / 10)
+            for i in range(120)
+        ]
+    )
+    store.upsert_many(
+        [
+            priced_bar(
+                "1m",
+                START + i * MINUTE,
+                MINUTE,
+                Decimal("129.12"),
+                high="130" if i == 16 else None,
+            )
+            for i in range(30)
+        ]
+    )
+    seed_funding(db_engine, funding_time_ms=START + QUARTER + MINUTE)
+    runner = service(db_engine)
+    reference = runner.run("BTCUSDT", START, END)
+    assert reference.status == "READY"
+    assert reference.result is not None
+    (trade,) = reference.result.trades
+    assert trade.side == "LONG"
+    assert trade.entry_time_ms == START + QUARTER
+    assert trade.exit_reason == "TAKE_PROFIT"
+    assert trade.funding_cost > 0
+    expected = report_json(reference)
+
+    for trap_inexact in (False, True):
+        with localcontext() as caller:
+            caller.prec = 9
+            caller.rounding = ROUND_DOWN
+            caller.capitals = 0
+            caller.traps[Inexact] = trap_inexact
+            caller.clear_flags()
+            assert report_json(runner.run("BTCUSDT", START, END)) == expected
+            assert caller.prec == 9 and caller.rounding == ROUND_DOWN
+            assert caller.capitals == 0 and caller.traps[Inexact] is trap_inexact
+            assert not caller.flags[Inexact]
+
+
+@pytest.mark.parametrize(
+    ("timeframe", "open_ms", "column"),
+    [
+        ("1m", START + 7 * MINUTE, "open_time"),
+        ("15m", START - 100 * QUARTER, "close_time"),
+        ("1h", START - HOUR, "close_time"),
+    ],
+)
+def test_submillisecond_candle_timestamps_block_replay(
+    db_engine: Engine, timeframe: str, open_ms: int, column: str
+) -> None:
+    seed_history(db_engine)
+    seed_funding(db_engine)
+    step = {"1m": MINUTE, "15m": QUARTER, "1h": HOUR}[timeframe]
+    opened = datetime.fromtimestamp(open_ms / 1000, tz=UTC)
+    expected = opened if column == "open_time" else opened + timedelta(milliseconds=step)
+    with db_engine.begin() as conn:
+        conn.execute(
+            update(Candle)
+            .where(
+                Candle.symbol == "BTCUSDT",
+                Candle.timeframe == timeframe,
+                Candle.open_time == opened,
+            )
+            .values({column: expected + timedelta(microseconds=1)})
+        )
+    report = service(db_engine).run("BTCUSDT", START, END)
+    assert report.status == "UNAVAILABLE"
+    assert report.result is None
+    assert report.reason == f"{timeframe.upper()}_GAP_OR_MISALIGNED_CLOSE"
+
+
+def test_off_minute_funding_blocks_replay_with_specific_reason(db_engine: Engine) -> None:
+    seed_history(db_engine)
+    seed_funding(db_engine, funding_time_ms=START + MINUTE + 1)
+    report = service(db_engine).run("BTCUSDT", START, END)
+    assert report.status == "UNAVAILABLE"
+    assert report.result is None
+    assert report.reason == "OFF_MINUTE_EVENTS"
 
 
 def test_missing_execution_history_returns_unavailable(db_engine: Engine) -> None:

@@ -60,6 +60,11 @@ The funding CLI defaults to both BTCUSDT and ETHUSDT; use `--symbols BTCUSDT` or
 complete, fingerprint-verified funding manifest. Missing or tampered
 coverage returns UNAVAILABLE.
 
+The read-only `GET /api/v1/market/backtest-readiness` endpoint checks an
+exact window of up to 129,600 execution minutes. A 90-day readiness check
+verifies archive coverage for that window. Each simulated fold still needs
+its own exact manifest and remains within the 50,000-minute replay cap.
+
 ## Walk-forward command
 
 ```bash
@@ -97,6 +102,9 @@ candles/funding are never modified and reports are not persisted.
 - Aggregate PnL is the sum of independent fold PnL; each fold starts with
   its own configured initial equity. It is **not** a compounded portfolio
   return. Worst-fold drawdown and duration-weighted exposure are reported.
+  Aggregation uses the same isolated Decimal precision and rounding as the
+  single-window replay. The cost matrix sums the monetary totals recorded
+  for each fold.
 - The scenario summary counts skipped signals by fold and reason. An interior
   boundary signal belongs to the later fold. A signal at the evaluation end
   is recorded as `NO_NEXT_1M_EXECUTION_BAR` in the final fold.

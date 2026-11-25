@@ -1,6 +1,7 @@
 """Frozen-parameter walk-forward fold boundaries, costs and read-only replay tests."""
 
-from decimal import Decimal
+from datetime import UTC, datetime
+from decimal import ROUND_DOWN, Decimal, Inexact, localcontext
 
 import pytest
 from sqlalchemy import delete, func, select
@@ -16,7 +17,7 @@ from baqs.backtest.walk_forward import (
 )
 from baqs.market_data.funding import FundingStore
 from baqs.market_data.repository import CandleStore
-from baqs.market_data.schema import FinalCandle
+from baqs.market_data.schema import FinalCandle, FundingRateRecord
 from baqs.models import Candle, FundingCoverageRecord, FundingRate
 from baqs.strategies.s01 import S01TrendPullbackStrategy
 
@@ -52,7 +53,9 @@ def _candle(
     )
 
 
-def _seed_walk_forward(engine: Engine) -> None:
+def _seed_walk_forward(
+    engine: Engine, *, funding_records: tuple[FundingRateRecord, ...] = ()
+) -> None:
     store = CandleStore(engine)
     bars_1m = [
         _candle(
@@ -72,9 +75,20 @@ def _seed_walk_forward(engine: Engine) -> None:
     store.upsert_many(bars_15m)
     store.upsert_many(bars_1h)
     funding = FundingStore(engine)
+    funding.upsert_many(funding_records)
     for index in range(3):
         fold_start = START + index * DAY
-        funding.complete_window("BTCUSDT", fold_start, fold_start + DAY, [])
+        fold_end = fold_start + DAY
+        funding.complete_window(
+            "BTCUSDT",
+            fold_start,
+            fold_end,
+            [
+                record
+                for record in funding_records
+                if fold_start <= record.funding_time_ms < fold_end
+            ],
+        )
 
 
 def _table_counts(engine: Engine) -> tuple[int, int, int]:
@@ -138,10 +152,23 @@ def test_cost_scenarios_require_distinct_assumption_pairs(db_engine: Engine) -> 
 def test_walk_forward_cost_sensitivity_is_deterministic_and_read_only(
     db_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _seed_walk_forward(db_engine)
+    boundary = START + DAY
+    first_minute = boundary + MINUTE
+    _seed_walk_forward(
+        db_engine,
+        funding_records=(
+            FundingRateRecord("BTCUSDT", boundary, Decimal("0.001"), Decimal(99), "Regular"),
+            FundingRateRecord("BTCUSDT", boundary, Decimal("0.003"), Decimal(101), "Special"),
+            FundingRateRecord("BTCUSDT", first_minute, Decimal("0.002"), Decimal(103), "Regular"),
+        ),
+    )
 
     def signals(self, bars15, bars1h):
         evaluation_start = bars15[2920].open_ms
+        evaluation_end = bars15[-1].close_ms
+        assert bars15[0].open_ms == evaluation_start - 2920 * QUARTER
+        assert bars1h[0].open_ms == evaluation_start - 120 * HOUR
+        assert bars1h[-1].close_ms == evaluation_end
         return [
             EntrySignal(
                 symbol=bars15[0].symbol,
@@ -150,7 +177,7 @@ def test_walk_forward_cost_sensitivity_is_deterministic_and_read_only(
                 stop_price=Decimal(90),
                 strategy_version=self.config.strategy_version,
             )
-            for signal_time_ms in (evaluation_start, bars15[-1].close_ms)
+            for signal_time_ms in (evaluation_start, evaluation_end)
         ]
 
     monkeypatch.setattr(S01TrendPullbackStrategy, "generate_signals", signals)
@@ -166,7 +193,13 @@ def test_walk_forward_cost_sensitivity_is_deterministic_and_read_only(
         minimum_trades_per_fold=1,
     )
     first = service.run("BTCUSDT", START, END)
-    second = service.run("BTCUSDT", START, END)
+    with localcontext() as caller_context:
+        caller_context.prec = 9
+        caller_context.rounding = ROUND_DOWN
+        caller_context.traps[Inexact] = True
+        caller_context.clear_flags()
+        second = service.run("BTCUSDT", START, END)
+        assert not caller_context.flags[Inexact]
 
     assert first.status == "READY"
     assert first.market_regime_coverage == "NOT_EVALUATED"
@@ -178,13 +211,28 @@ def test_walk_forward_cost_sensitivity_is_deterministic_and_read_only(
         result = cell.report.result
         assert result is not None
         assert result.trades[0].entry_time_ms == START + (cell.fold_index - 1) * DAY
+        funding = cell.report.data_provenance["funding"]
+        assert isinstance(funding, dict)
+        if cell.fold_index == 2:
+            assert funding["expected_timestamps_ms"] == [boundary, boundary, first_minute]
+            trade = result.trades[0]
+            assert trade.funding_cost == trade.quantity * Decimal(103) * Decimal("0.002")
+        else:
+            assert funding["expected_timestamps_ms"] == []
+            assert result.trades[0].funding_cost == 0
         if cell.fold_index < first.fold_count:
             assert not result.skipped_signals
         else:
             assert len(result.skipped_signals) == 1
             assert result.skipped_signals[0].signal_time_ms == END
             assert result.skipped_signals[0].reason == "NO_NEXT_1M_EXECUTION_BAR"
-    for aggregate in first.aggregate_by_scenario.values():
+    for scenario, aggregate in first.aggregate_by_scenario.items():
+        fold_results = [
+            cell.report.result
+            for cell in first.cells
+            if cell.cost_scenario == scenario and cell.report.result is not None
+        ]
+        assert aggregate["net_pnl"] == sum(result.metrics.net_pnl for result in fold_results)
         assert aggregate["skipped_signal_count"] == 1
         assert aggregate["skipped_signal_counts_by_fold"] == [0, 0, 1]
         assert aggregate["skipped_signal_counts_by_reason"] == {"NO_NEXT_1M_EXECUTION_BAR": 1}
@@ -224,7 +272,12 @@ def test_walk_forward_fails_closed_without_each_fold_funding_manifest(
 ) -> None:
     _seed_walk_forward(db_engine)
     with Session(db_engine) as session:
-        session.execute(delete(FundingCoverageRecord))
+        session.execute(
+            delete(FundingCoverageRecord).where(
+                FundingCoverageRecord.start_time
+                == datetime.fromtimestamp((START + DAY) / 1000, tz=UTC)
+            )
+        )
         session.commit()
 
     def no_signals(self, bars15, bars1h):
@@ -241,4 +294,6 @@ def test_walk_forward_fails_closed_without_each_fold_funding_manifest(
         minimum_trades_per_fold=1,
     ).run("BTCUSDT", START, END)
     assert report.status == "UNAVAILABLE"
+    assert report.cells[-1].fold_index == 2
+    assert not report.aggregate_by_scenario
     assert "no complete coverage manifest" in (report.reason or "")

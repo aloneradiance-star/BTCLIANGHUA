@@ -8,6 +8,8 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from baqs.api import create_app
+from baqs.market_data.repository import CandleStore, MarketStreamStore
+from baqs.market_data.schema import INTERVAL_MS, SYMBOLS, FinalCandle
 from baqs.models import Candle, RegimeSnapshot
 from baqs.settings import Settings
 
@@ -31,9 +33,54 @@ def test_health_reports_no_execution(db_engine: Engine) -> None:
     assert data["market_data"] == "UNAVAILABLE"
 
 
+def test_market_readiness_requires_fresh_candles_and_connected_collector(db_engine: Engine) -> None:
+    now_ms = int(datetime.now(UTC).timestamp() * 1000)
+    client = client_for(db_engine)
+    collector = MarketStreamStore(db_engine)
+    collector.record_message(now_ms)
+    assert client.get("/api/v1/health").status_code == 503
+
+    store = CandleStore(db_engine)
+    price = Decimal(100)
+    for symbol in SYMBOLS:
+        for timeframe, step in INTERVAL_MS.items():
+            close_ms = now_ms // step * step
+            store.upsert(
+                FinalCandle(
+                    symbol,
+                    timeframe,
+                    close_ms - step,
+                    close_ms,
+                    price,
+                    price,
+                    price,
+                    price,
+                    Decimal(1),
+                    price,
+                    1,
+                    "REST",
+                )
+            )
+
+    for last_message, status, expected_http in (
+        (now_ms - 60_000, "STALE", 503),
+        (now_ms + 60_000, "STALE", 503),
+        (None, "DISCONNECTED", 503),
+        (now_ms, "CONNECTED", 200),
+    ):
+        collector.record_message(last_message)
+        response = client.get("/api/v1/health")
+        assert response.status_code == expected_http
+        assert response.json()["execution_enabled"] is False
+        details = client.get("/api/v1/market/health").json()
+        assert details["collector"] == {"status": status, "last_message_ms": last_message}
+        assert details["feeds"]["BTCUSDT"]["1m"]["status"] == "READY"
+
+
 def test_market_health_no_data_does_not_claim_ready(db_engine: Engine) -> None:
     response = client_for(db_engine).get("/api/v1/market/health")
     assert response.status_code == 200
+    assert response.json()["collector"] == {"status": "NOT_STARTED", "last_message_ms": None}
     feeds = response.json()["feeds"]
     assert feeds["BTCUSDT"]["1m"]["status"] == "NO_DATA"
     assert feeds["ETHUSDT"]["1h"]["status"] == "NO_DATA"

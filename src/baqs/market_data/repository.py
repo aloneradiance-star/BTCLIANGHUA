@@ -2,15 +2,17 @@
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from time import time_ns
 from typing import Literal
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from baqs.market_data.schema import INTERVAL_MS, CandleConflict, FinalCandle
-from baqs.models import Candle
+from baqs.models import Candle, MarketStreamState
 
 StoreResult = Literal["CREATED", "DUPLICATE", "PROMOTED"]
+STREAM_IDLE_TIMEOUT_SECONDS = 30
 MAX_HISTORY_DAYS = 90
 MAX_HISTORY_BARS_BY_TIMEFRAME = {
     timeframe: MAX_HISTORY_DAYS * 24 * 60 // (step // 60_000)
@@ -22,6 +24,37 @@ def _milliseconds(value: datetime) -> int:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)  # SQLite test driver drops tzinfo
     return int(value.timestamp() * 1000)
+
+
+class MarketStreamStore:
+    """Share the combined public stream status between one collector and the API."""
+
+    def __init__(self, engine: Engine) -> None:
+        self.engine = engine
+
+    def record_message(self, received_ms: int | None) -> None:
+        """Write a receipt time or clear it when the stream is disconnected."""
+        with Session(self.engine) as session:
+            state = session.get(MarketStreamState, 1)
+            if state is None:
+                session.add(MarketStreamState(id=1, last_message_ms=received_ms))
+            else:
+                state.last_message_ms = received_ms
+            session.commit()
+
+    def health(self) -> dict[str, object]:
+        with Session(self.engine) as session:
+            state = session.get(MarketStreamState, 1)
+            last_message_ms = state.last_message_ms if state is not None else None
+        status = "NOT_STARTED"
+        if state is not None:
+            status = "DISCONNECTED"
+            if last_message_ms is not None:
+                age_ms = time_ns() // 1_000_000 - last_message_ms
+                status = (
+                    "CONNECTED" if 0 <= age_ms < STREAM_IDLE_TIMEOUT_SECONDS * 1000 else "STALE"
+                )
+        return {"status": status, "last_message_ms": last_message_ms}
 
 
 class CandleStore:
@@ -177,10 +210,16 @@ class CandleStore:
                 )
                 .order_by(Candle.open_time)
             ).all()
-        times = [_milliseconds(open_time) for open_time, _, _, _, _ in rows]
+        # All supported intervals have whole-second boundaries. Reject subsecond
+        # data before the shared millisecond conversion can round it away.
+        present_times = {
+            _milliseconds(open_time) for open_time, *_ in rows if open_time.microsecond == 0
+        }
         invalid_close_count = sum(
-            _milliseconds(close_time) != _milliseconds(open_time) + step
-            for open_time, close_time, _, _, _ in rows
+            open_time.microsecond != 0
+            or close_time.microsecond != 0
+            or _milliseconds(close_time) != _milliseconds(open_time) + step
+            for open_time, close_time, *_ in rows
         )
         invalid_metadata_count = sum(
             quote_volume is None
@@ -191,6 +230,14 @@ class CandleStore:
             or source not in {"REST", "WS"}
             for _, _, quote_volume, trade_count, source in rows
         )
+        first_missing_open_ms = next(
+            (
+                start_ms + i * step
+                for i in range(required_bars)
+                if start_ms + i * step not in present_times
+            ),
+            None,
+        )
         # Account for a stale final bar independently from warm-up completeness.
         last_available = self.latest_open_ms(symbol, timeframe)
         if last_available is None:
@@ -198,13 +245,13 @@ class CandleStore:
         elif require_latest and last_available != anchored_end_ms - step:
             status = "STALE"
         elif (
-            len(times) == required_bars
+            len(rows) == required_bars
             and invalid_close_count == 0
             and invalid_metadata_count == 0
-            and all(timestamp == start_ms + i * step for i, timestamp in enumerate(times))
+            and first_missing_open_ms is None
         ):
             status = "READY"
-        elif not times or times[0] > start_ms:
+        elif first_missing_open_ms == start_ms:
             status = "INSUFFICIENT"
         else:
             status = "GAP"
@@ -213,20 +260,13 @@ class CandleStore:
             "symbol": symbol,
             "timeframe": timeframe,
             "required_bars": required_bars,
-            "present_bars": len(times),
+            "present_bars": len(rows),
             "invalid_close_count": invalid_close_count,
             "invalid_metadata_count": invalid_metadata_count,
             "anchored_end_ms": anchored_end_ms,
             "earliest_expected_open_ms": start_ms,
             "last_expected_open_ms": anchored_end_ms - step,
-            "first_missing_open_ms": next(
-                (
-                    start_ms + i * step
-                    for i in range(required_bars)
-                    if i >= len(times) or times[i] != start_ms + i * step
-                ),
-                None,
-            ),
+            "first_missing_open_ms": first_missing_open_ms,
         }
 
     def health(

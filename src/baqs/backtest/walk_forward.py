@@ -4,7 +4,7 @@ import argparse
 import json
 from collections import Counter
 from dataclasses import asdict, dataclass, is_dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any, Literal, cast
 
 from sqlalchemy.engine import Engine
@@ -12,6 +12,7 @@ from sqlalchemy.engine import Engine
 from baqs.backtest.engine import BacktestConfig, CostModel
 from baqs.backtest.research import (
     MAX_EXECUTION_BARS,
+    REPLAY_DECIMAL_CONTEXT,
     WARMUP_15M_BARS,
     S01ResearchReport,
     S01ResearchService,
@@ -147,12 +148,12 @@ def _aggregate_scenario(
     wins = sum(trade.net_pnl > ZERO for trade in trades)
     positive_pnl = sum((trade.net_pnl for trade in trades if trade.net_pnl > ZERO), ZERO)
     negative_pnl = abs(sum((trade.net_pnl for trade in trades if trade.net_pnl < ZERO), ZERO))
-    gross_pnl = sum((trade.gross_pnl for trade in trades), ZERO)
-    net_pnl = sum((trade.net_pnl for trade in trades), ZERO)
-    fees = sum((trade.fees for trade in trades), ZERO)
-    funding = sum((trade.funding_cost for trade in trades), ZERO)
-    slippage = sum((trade.slippage_cost for trade in trades), ZERO)
     metrics = [result.metrics for result in completed]
+    gross_pnl = sum((metric.gross_pnl for metric in metrics), ZERO)
+    net_pnl = sum((metric.net_pnl for metric in metrics), ZERO)
+    fees = sum((metric.total_fees for metric in metrics), ZERO)
+    funding = sum((metric.total_funding_cost for metric in metrics), ZERO)
+    slippage = sum((metric.total_slippage_cost for metric in metrics), ZERO)
     durations = [fold.end_ms - fold.start_ms for fold in folds]
     total_duration = sum(durations)
     exposure = sum(
@@ -269,15 +270,16 @@ class WalkForwardResearchService:
                     strategy_parameters = report.strategy_parameters
                     strategy_version = report.strategy_version
 
-        aggregates = {
-            scenario.name: _aggregate_scenario(
-                scenario,
-                folds,
-                cells,
-                self.minimum_trades_per_fold,
-            )
-            for scenario in self.cost_scenarios
-        }
+        with localcontext(REPLAY_DECIMAL_CONTEXT):
+            aggregates = {
+                scenario.name: _aggregate_scenario(
+                    scenario,
+                    folds,
+                    cells,
+                    self.minimum_trades_per_fold,
+                )
+                for scenario in self.cost_scenarios
+            }
         sufficient = all(bool(aggregate["sufficient_sample"]) for aggregate in aggregates.values())
         return WalkForwardReport(
             status="READY" if sufficient else "INSUFFICIENT_SAMPLE",
