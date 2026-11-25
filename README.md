@@ -22,7 +22,7 @@ uvicorn baqs.api:app --reload
 ```
 Open `http://127.0.0.1:8000/docs`. API endpoints are read-only:
 `GET /api/v1/health`, `GET /api/v1/market/health`,
-`GET /api/v1/market/candles`, and
+`GET /api/v1/market/history-readiness`, `GET /api/v1/market/candles`, and
 `GET /api/v1/market/regimes?timeframe=5m`. The regime endpoint defaults to
 `5m`, accepts `1m`, `5m`, `15m`, or `1h`, and only returns a snapshot for
 the requested timeframe; a missing timeframe is explicitly `UNAVAILABLE`.
@@ -30,8 +30,9 @@ Application logs in the `baqs` namespace are JSON lines on stderr. Uvicorn
 access/error logging keeps the server's own logging configuration.
 
 The database begins empty. Public market ingestion is implemented in Issue #2,
-and market classification remains Issue #4. On empty data, endpoints must
-report unavailable data, not fabricated signals.
+historical coverage is gated by Issue #9, and market classification remains Issue #4.
+The history-readiness endpoint reports candle coverage only, not alpha or trading signals.
+On empty data, endpoints must report unavailable data, not fabricated signals.
 
 ## Opt-in public Binance market collector
 After `alembic upgrade head`, in a separate process run:

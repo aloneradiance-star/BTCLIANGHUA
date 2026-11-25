@@ -148,6 +148,94 @@ class CandleStore:
             if newer > older + step
         ]
 
+    def history_readiness(
+        self,
+        symbol: str,
+        timeframe: str,
+        anchored_end_ms: int,
+        *,
+        required_bars: int,
+        require_latest: bool = False,
+    ) -> dict[str, object]:
+        """Verify every closed candle in a fixed UTC half-open history window.
+
+        Not equivalent to `health()`: this checks full feature warm-up coverage.
+        When require_latest=True, the window must end at the most recent closed bar.
+        """
+        if symbol not in {"BTCUSDT", "ETHUSDT"} or timeframe not in INTERVAL_MS:
+            raise ValueError("Unknown research feed")
+        step = INTERVAL_MS[timeframe]
+        if (
+            type(required_bars) is not int
+            or not 1 <= required_bars <= 10_000
+            or type(anchored_end_ms) is not int
+            or anchored_end_ms < required_bars * step
+            or anchored_end_ms % step
+        ):
+            raise ValueError("Invalid historical readiness window")
+        start_ms = anchored_end_ms - required_bars * step
+        start = datetime.fromtimestamp(start_ms / 1000, tz=UTC)
+        end = datetime.fromtimestamp(anchored_end_ms / 1000, tz=UTC)
+        with Session(self.engine) as session:
+            rows = session.execute(
+                select(Candle.open_time, Candle.close_time)
+                .where(
+                    Candle.symbol == symbol,
+                    Candle.timeframe == timeframe,
+                    Candle.is_final.is_(True),
+                    Candle.open_time >= start,
+                    Candle.open_time < end,
+                )
+                .order_by(Candle.open_time)
+            ).all()
+        # All supported intervals have whole-second boundaries. Reject subsecond
+        # data before the shared millisecond conversion can round it away.
+        present_times = {
+            _milliseconds(open_time) for open_time, _ in rows if open_time.microsecond == 0
+        }
+        invalid_close_count = sum(
+            open_time.microsecond != 0
+            or close_time.microsecond != 0
+            or _milliseconds(close_time) != _milliseconds(open_time) + step
+            for open_time, close_time in rows
+        )
+        first_missing_open_ms = next(
+            (
+                start_ms + i * step
+                for i in range(required_bars)
+                if start_ms + i * step not in present_times
+            ),
+            None,
+        )
+        # Account for a stale final bar independently from warm-up completeness.
+        last_available = self.latest_open_ms(symbol, timeframe)
+        if last_available is None:
+            status = "NO_DATA"
+        elif require_latest and last_available != anchored_end_ms - step:
+            status = "STALE"
+        elif (
+            len(rows) == required_bars
+            and invalid_close_count == 0
+            and first_missing_open_ms is None
+        ):
+            status = "READY"
+        elif first_missing_open_ms == start_ms:
+            status = "INSUFFICIENT"
+        else:
+            status = "GAP"
+        return {
+            "status": status,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "required_bars": required_bars,
+            "present_bars": len(rows),
+            "invalid_close_count": invalid_close_count,
+            "anchored_end_ms": anchored_end_ms,
+            "earliest_expected_open_ms": start_ms,
+            "last_expected_open_ms": anchored_end_ms - step,
+            "first_missing_open_ms": first_missing_open_ms,
+        }
+
     def health(
         self,
         symbol: str,
