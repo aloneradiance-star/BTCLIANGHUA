@@ -73,6 +73,22 @@ def test_bootstrap_recovers_hole_older_than_overlap(db_engine: Engine) -> None:
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("future_index", [9, 40])
+def test_bootstrap_rejects_persisted_candles_after_exchange_time(
+    db_engine: Engine, future_index: int
+) -> None:
+    store = CandleStore(db_engine)
+    store.upsert(bar(future_index, source="WS"))
+    stub = StubREST(9 * STEP + 500)
+    service = PublicMarketDataService(stub, store)  # type: ignore[arg-type]
+
+    with pytest.raises(CandleGap, match="finalized candle after Binance server time"):
+        asyncio.run(service.bootstrap("BTCUSDT", "1m"))
+
+    assert stub.calls == []
+    assert store.latest_open_ms("BTCUSDT", "1m") == future_index * STEP
+
+
 def test_gap_filled_before_accepting_later_ws_candle(db_engine: Engine) -> None:
     async def run() -> None:
         store = CandleStore(db_engine)
