@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from decimal import Decimal
 from unittest.mock import AsyncMock, Mock
 
@@ -15,10 +16,10 @@ from baqs.market_data.schema import FinalCandle
 from baqs.settings import Settings
 
 
-def test_closed_and_silent_websockets_back_off_and_reset_on_a_candle(
+def test_closed_silent_and_invalid_websockets_back_off_and_reset_on_a_candle(
     db_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    connections = iter(([], [], ["{}"], ["stall"]))
+    connections = iter(([], [], ["{}"], ['{"future": true}'], ["stall"]))
     delays: list[float] = []
     status_store = MarketStreamStore(db_engine)
     candle = FinalCandle(
@@ -35,6 +36,7 @@ def test_closed_and_silent_websockets_back_off_and_reset_on_a_candle(
         1,
         "WS",
     )
+    future_candle = replace(candle, open_ms=60_000, close_ms=120_000)
 
     async def frames(messages: list[str]) -> AsyncIterator[str]:
         for message in messages:
@@ -61,12 +63,13 @@ def test_closed_and_silent_websockets_back_off_and_reset_on_a_candle(
     monkeypatch.setattr(runner, "PublicMarketDataService", Mock(return_value=service))
     monkeypatch.setattr(runner, "connect", connect)
     monkeypatch.setattr(runner, "STREAM_IDLE_TIMEOUT_SECONDS", 0.02)
-    monkeypatch.setattr(runner, "from_ws_message", Mock(return_value=candle))
+    monkeypatch.setattr(runner, "time_ns", lambda: candle.close_ms * 1_000_000)
+    monkeypatch.setattr(runner, "from_ws_message", Mock(side_effect=[candle, future_candle]))
     monkeypatch.setattr(runner.asyncio, "sleep", sleep)
 
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(runner.run_collector())
 
-    assert delays == [1.0, 2.0, 1.0, 2.0]
-    assert service.bootstrap_all.await_count == 4
+    assert delays == [1.0, 2.0, 1.0, 2.0, 4.0]
+    assert service.bootstrap_all.await_count == 5
     service.ingest.assert_awaited_once_with(candle)

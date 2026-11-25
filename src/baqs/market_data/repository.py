@@ -174,7 +174,8 @@ class CandleStore:
         gaps = sum(
             (b - a) // step - 1 for a, b in zip(times, times[1:], strict=False) if b > a + step
         )
-        stale = now_ms - (times[-1] + step) > 2 * step
+        age_ms = now_ms - (times[-1] + step)
+        stale = not 0 <= age_ms <= 2 * step
         status = "GAP" if gaps else "STALE" if stale else "READY"
         return {
             "status": status,
