@@ -10,9 +10,11 @@ from decimal import Decimal
 
 from baqs.backtest.engine import EntrySignal
 from baqs.indicators.engine import FeatureRow, compute_features
-from baqs.market_data.schema import FinalCandle
+from baqs.market_data.schema import INTERVAL_MS, FinalCandle
 
 ZERO = Decimal(0)
+SIGNAL_INTERVAL_MS = INTERVAL_MS["15m"]
+TREND_INTERVAL_MS = INTERVAL_MS["1h"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,10 +77,12 @@ def evaluate_s01_signal(
         or current.symbol != current_bar.symbol
         or previous.symbol != previous_bar.symbol
         or previous.symbol != current.symbol
-        or current_bar.close_ms != current_bar.open_ms + 900_000
+        or current_bar.close_ms != current_bar.open_ms + SIGNAL_INTERVAL_MS
+        or current.open_ms != current_bar.open_ms
         or current.close_ms != current_bar.close_ms
+        or previous.open_ms != previous_bar.open_ms
         or previous.close_ms != previous_bar.close_ms
-        or current_bar.open_ms != previous_bar.open_ms + 900_000
+        or current_bar.open_ms != previous_bar.close_ms
     ):
         raise ValueError("S01 15m candle and feature alignment failed")
     if higher is None:
@@ -89,7 +93,13 @@ def evaluate_s01_signal(
         or higher.close_ms > current.close_ms
     ):
         raise ValueError("S01 higher-timeframe feature is future-dated or mismatched")
-    if current.close_ms - higher.close_ms >= 3_600_000:
+    if (
+        higher.open_ms < 0
+        or higher.open_ms % TREND_INTERVAL_MS
+        or higher.close_ms != higher.open_ms + TREND_INTERVAL_MS
+    ):
+        raise ValueError("S01 higher-timeframe feature alignment failed")
+    if current.close_ms - higher.close_ms >= TREND_INTERVAL_MS:
         raise ValueError("S01 higher-timeframe feature is stale")
 
     required_current = (

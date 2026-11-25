@@ -436,17 +436,17 @@ class BacktestEngine:
                     )
                 else:
                     reference = bar.open
-                    fill = _entry_fill(reference, signal.side, slippage_rate)
                     valid_stop = (
-                        signal.stop_price < fill
+                        signal.stop_price < reference
                         if signal.side == "LONG"
-                        else signal.stop_price > fill
+                        else signal.stop_price > reference
                     )
                     if not valid_stop:
                         skipped.append(
                             SkippedSignal(signal.signal_time_ms, signal.side, "STOP_ON_WRONG_SIDE")
                         )
                     else:
+                        fill = _entry_fill(reference, signal.side, slippage_rate)
                         stop_distance = abs(fill - signal.stop_price)
                         side_sign = ONE if signal.side == "LONG" else -ONE
                         target = fill + side_sign * stop_distance * config.reward_risk

@@ -5,7 +5,15 @@ Feature rows are research observations, never an action/order or calibrated prob
 
 from collections.abc import Sequence
 from dataclasses import dataclass, fields
-from decimal import Decimal
+from decimal import (
+    ROUND_HALF_EVEN,
+    Context,
+    Decimal,
+    DivisionByZero,
+    InvalidOperation,
+    Overflow,
+    localcontext,
+)
 
 from baqs.indicators.core import (
     bollinger,
@@ -18,6 +26,17 @@ from baqs.indicators.core import (
     wilder_rsi,
 )
 from baqs.market_data.schema import INTERVAL_MS, SYMBOLS, FinalCandle
+
+_FEATURE_DECIMAL_CONTEXT = Context(
+    prec=28,
+    rounding=ROUND_HALF_EVEN,
+    Emin=-999_999,
+    Emax=999_999,
+    capitals=1,
+    clamp=0,
+    flags=[],
+    traps=[InvalidOperation, DivisionByZero, Overflow],
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,9 +65,10 @@ class FeatureRow:
     def as_dict(self) -> dict[str, str | int | None]:
         """JSON-safe presentation with exact Decimal string values."""
         result: dict[str, str | int | None] = {}
-        for field in fields(self):
-            value = getattr(self, field.name)
-            result[field.name] = str(value) if isinstance(value, Decimal) else value
+        with localcontext(_FEATURE_DECIMAL_CONTEXT):
+            for field in fields(self):
+                value = getattr(self, field.name)
+                result[field.name] = str(value) if isinstance(value, Decimal) else value
         return result
 
 
@@ -80,21 +100,22 @@ def compute_features(bars: Sequence[FinalCandle]) -> list[FeatureRow]:
     if not bars:
         return []
     closes = [bar.close for bar in bars]
-    ema20 = ema(closes, 20)
-    ema60 = ema(closes, 60)
-    rsi14 = wilder_rsi(closes)
-    atr14, adx14, plus_di, minus_di = wilder_atr_adx(bars)
-    bb_mid, bb_upper, bb_lower, bb_width = bollinger(closes)
-    vwap = utc_session_vwap(bars)
-    vol_ratio = past_volume_ratio(bars)
-    realized = realized_volatility(closes)
-    if bars[0].timeframe == "15m":
-        lookback = 30 * 24 * 60 // 15
-        bb_percentile = trailing_percentile(bb_width, lookback)
-        realized_percentile = trailing_percentile(realized, lookback)
-    else:
-        bb_percentile = [None] * len(bars)
-        realized_percentile = [None] * len(bars)
+    with localcontext(_FEATURE_DECIMAL_CONTEXT):
+        ema20 = ema(closes, 20)
+        ema60 = ema(closes, 60)
+        rsi14 = wilder_rsi(closes)
+        atr14, adx14, plus_di, minus_di = wilder_atr_adx(bars)
+        bb_mid, bb_upper, bb_lower, bb_width = bollinger(closes)
+        vwap = utc_session_vwap(bars)
+        vol_ratio = past_volume_ratio(bars)
+        realized = realized_volatility(closes)
+        if bars[0].timeframe == "15m":
+            lookback = 30 * 24 * 60 // 15
+            bb_percentile = trailing_percentile(bb_width, lookback)
+            realized_percentile = trailing_percentile(realized, lookback)
+        else:
+            bb_percentile = [None] * len(bars)
+            realized_percentile = [None] * len(bars)
 
     return [
         FeatureRow(

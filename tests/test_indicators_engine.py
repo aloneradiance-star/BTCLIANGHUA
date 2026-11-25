@@ -1,6 +1,7 @@
 """Final-candle engine tests: temporal consistency, anti-lookahead, 30d warm-up."""
 
-from decimal import Decimal
+from dataclasses import replace
+from decimal import ROUND_DOWN, Decimal, Inexact, localcontext
 from time import perf_counter
 
 import pytest
@@ -45,6 +46,27 @@ def test_no_future_data_leakage_and_deterministic_replay() -> None:
     assert full[-1].bb_width20 is not None
 
 
+@pytest.mark.parametrize("trap_inexact", [False, True])
+def test_feature_replay_is_independent_of_decimal_context(trap_inexact: bool) -> None:
+    bars = series(2903)
+    expected = compute_features(bars)
+    expected_payloads = [row.as_dict() for row in expected[-3:]]
+    with localcontext() as caller:
+        caller.prec = 9
+        caller.rounding = ROUND_DOWN
+        caller.capitals = 0
+        caller.traps[Inexact] = trap_inexact
+        caller.clear_flags()
+        actual = compute_features(bars)
+        assert actual == expected
+        assert [row.as_dict() for row in actual[-3:]] == expected_payloads
+        assert caller.prec == 9
+        assert caller.rounding == ROUND_DOWN
+        assert caller.capitals == 0
+        assert caller.traps[Inexact] is trap_inexact
+        assert not caller.flags[Inexact]
+
+
 def test_warmup_none_and_decimal_safe_serialization() -> None:
     result = compute_features(series(16))
     assert result[0].ema20 is None
@@ -56,6 +78,10 @@ def test_warmup_none_and_decimal_safe_serialization() -> None:
     assert payload["ema20"] is None
     assert isinstance(payload["rsi14"], str)
     assert payload["symbol"] == "BTCUSDT"
+    scientific = replace(result[-1], realized_vol20=Decimal("1.234E-30"))
+    with localcontext() as caller:
+        caller.capitals = 0
+        assert scientific.as_dict()["realized_vol20"] == "1.234E-30"
 
 
 def test_15m_30day_percentiles_wait_for_full_past_window() -> None:
