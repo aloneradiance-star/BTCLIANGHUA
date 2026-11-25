@@ -66,9 +66,13 @@ class PublicMarketDataService:
         latest = self.store.latest_open_ms(candle.symbol, candle.timeframe)
         step = INTERVAL_MS[candle.timeframe]
         if latest is not None and candle.open_ms > latest + step:
+            gap_start = latest + step
             missing = await self.rest.fetch_range(
-                candle.symbol, candle.timeframe, latest + step, candle.open_ms
+                candle.symbol, candle.timeframe, gap_start, candle.open_ms
             )
+            expected = (candle.open_ms - gap_start) // step
+            if len(missing) != expected:
+                raise CandleGap("REST repair did not cover the full interval before the WS candle")
             for recovered in missing:
                 self.store.upsert(recovered)
         result = self.store.upsert(candle)

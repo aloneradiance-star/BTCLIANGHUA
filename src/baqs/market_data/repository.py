@@ -1,21 +1,54 @@
 """Immutable finalized-candle storage and window-based health checks."""
 
 from datetime import UTC, datetime
+from time import time_ns
 from typing import Literal
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from baqs.market_data.schema import INTERVAL_MS, CandleConflict, FinalCandle
-from baqs.models import Candle
+from baqs.models import Candle, MarketStreamState
 
 StoreResult = Literal["CREATED", "DUPLICATE", "PROMOTED"]
+STREAM_IDLE_TIMEOUT_SECONDS = 30
 
 
 def _milliseconds(value: datetime) -> int:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)  # SQLite test driver drops tzinfo
     return int(value.timestamp() * 1000)
+
+
+class MarketStreamStore:
+    """Share the combined public stream status between one collector and the API."""
+
+    def __init__(self, engine: Engine) -> None:
+        self.engine = engine
+
+    def record_message(self, received_ms: int | None) -> None:
+        """Write a receipt time or clear it when the stream is disconnected."""
+        with Session(self.engine) as session:
+            state = session.get(MarketStreamState, 1)
+            if state is None:
+                session.add(MarketStreamState(id=1, last_message_ms=received_ms))
+            else:
+                state.last_message_ms = received_ms
+            session.commit()
+
+    def health(self) -> dict[str, object]:
+        with Session(self.engine) as session:
+            state = session.get(MarketStreamState, 1)
+            last_message_ms = state.last_message_ms if state is not None else None
+        status = "NOT_STARTED"
+        if state is not None:
+            status = "DISCONNECTED"
+            if last_message_ms is not None:
+                age_ms = time_ns() // 1_000_000 - last_message_ms
+                status = (
+                    "CONNECTED" if 0 <= age_ms < STREAM_IDLE_TIMEOUT_SECONDS * 1000 else "STALE"
+                )
+        return {"status": status, "last_message_ms": last_message_ms}
 
 
 class CandleStore:
