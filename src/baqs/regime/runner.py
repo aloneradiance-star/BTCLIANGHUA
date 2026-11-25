@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from baqs.db import make_engine
 from baqs.logging_config import configure_logging
 from baqs.market_data.schema import SYMBOLS
-from baqs.regime.gate import FIVE_MIN_MS
 from baqs.regime.rules import RegimeUnavailable
 from baqs.regime.service import RegimeResearchService
 from baqs.settings import get_settings
@@ -38,10 +37,9 @@ async def run(*, once: bool = False, poll_seconds: int = 15) -> None:
     try:
         while True:
             now_ms = int(datetime.now(UTC).timestamp() * 1000)
-            candle_close = now_ms // FIVE_MIN_MS * FIVE_MIN_MS
             for symbol in sorted(SYMBOLS):
                 try:
-                    output = service.observe(symbol, close_ms=candle_close, clock_ms=now_ms)
+                    output = service.observe_current(symbol, clock_ms=now_ms)
                     print(json.dumps(output, ensure_ascii=False, default=str))
                 except RegimeUnavailable as exc:
                     logger.warning("%s: market state unavailable: %s", symbol, exc)

@@ -21,13 +21,22 @@ def test_migration_upgrade_and_downgrade(tmp_path: Path, monkeypatch) -> None:
 
         engine = create_engine(url)
         tables = set(inspect(engine).get_table_names())
-        assert {"alembic_version", "candles", "regime_snapshots"} <= tables
+        assert {"alembic_version", "candles", "market_stream_state", "regime_snapshots"} <= tables
         engine.dispose()
+
+        command.downgrade(config, "0001_public")
+        engine = create_engine(url)
+        tables = set(inspect(engine).get_table_names())
+        assert "market_stream_state" not in tables
+        assert {"candles", "regime_snapshots"} <= tables
+        engine.dispose()
+        command.upgrade(config, "head")
 
         command.downgrade(config, "base")
         engine = create_engine(url)
         tables = set(inspect(engine).get_table_names())
         assert "candles" not in tables
+        assert "market_stream_state" not in tables
         assert "regime_snapshots" not in tables
         engine.dispose()
     finally:

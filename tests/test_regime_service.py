@@ -2,13 +2,15 @@
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, func, insert, select, update
+from sqlalchemy import Engine, delete, func, insert, select, update
 from sqlalchemy.orm import Session
 
 from baqs.api import create_app
+from baqs.market_data.repository import MarketStreamStore
 from baqs.models import Candle, RegimeSnapshot
 from baqs.regime.rules import RegimeUnavailable
 from baqs.regime.service import RegimeResearchService
@@ -18,6 +20,7 @@ FIVE_MIN = 300_000
 FIFTEEN_MIN = 900_000
 HOUR = 3_600_000
 ANCHOR_MS = int(datetime(2026, 11, 18, 12, 0, tzinfo=UTC).timestamp() * 1000)
+CURRENT_CLOCK_MS = ANCHOR_MS + 2 * FIVE_MIN + 1000
 
 
 def _bars(symbol: str, timeframe: str, start_ms: int, step: int, count: int) -> list[dict]:
@@ -42,7 +45,7 @@ def _bars(symbol: str, timeframe: str, start_ms: int, step: int, count: int) -> 
 
 
 @pytest.fixture
-def full_history(db_engine: Engine) -> Engine:
+def full_history(db_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Engine:
     # Includes future 5m rows relative to the first observation to test as-of filtering.
     rows = (
         _bars("BTCUSDT", "15m", ANCHOR_MS - 2920 * FIFTEEN_MIN, FIFTEEN_MIN, 2920)
@@ -51,6 +54,8 @@ def full_history(db_engine: Engine) -> Engine:
     )
     with db_engine.begin() as connection:
         connection.execute(insert(Candle), rows)
+    monkeypatch.setattr("baqs.market_data.repository.time_ns", lambda: CURRENT_CLOCK_MS * 1_000_000)
+    MarketStreamStore(db_engine).record_message(CURRENT_CLOCK_MS)
     return db_engine
 
 
@@ -132,8 +137,6 @@ def test_injected_future_15m_candle_never_enters_past_asof(full_history: Engine)
 
 
 def test_missing_historical_candle_fails_closed(full_history: Engine) -> None:
-    from sqlalchemy import delete
-
     with full_history.begin() as connection:
         connection.execute(
             delete(Candle).where(
@@ -241,3 +244,73 @@ def test_ready_history_without_snapshot_is_still_unavailable(full_history: Engin
     )
     assert latest["status"] == "UNAVAILABLE"
     assert latest["reason"] == "NO_CLASSIFICATION"
+
+
+def test_previous_snapshot_is_unavailable_when_a_new_5m_bar_has_closed(
+    full_history: Engine,
+) -> None:
+    service = RegimeResearchService(full_history)
+    service.observe("BTCUSDT", close_ms=ANCHOR_MS + FIVE_MIN, clock_ms=ANCHOR_MS + FIVE_MIN)
+    latest = service.latest("BTCUSDT", clock_ms=CURRENT_CLOCK_MS)
+    assert latest["status"] == "UNAVAILABLE"
+    assert latest["reason"] == "STALE_CLASSIFICATION"
+
+
+def test_current_regime_api_fails_closed_on_disconnected_or_stale_stream(
+    full_history: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = Mock(wraps=datetime)
+    clock.now.return_value = datetime.fromtimestamp(CURRENT_CLOCK_MS / 1000, tz=UTC)
+    monkeypatch.setattr("baqs.api.datetime", clock)
+    service = RegimeResearchService(full_history)
+    service.observe("BTCUSDT", close_ms=ANCHOR_MS + 2 * FIVE_MIN, clock_ms=CURRENT_CLOCK_MS)
+    stream = MarketStreamStore(full_history)
+    api = create_app(
+        settings=Settings(_env_file=None, database_url="sqlite:///:memory:"),
+        engine=full_history,
+    )
+    with TestClient(api) as client:
+
+        def current() -> dict[str, object]:
+            response = client.get("/api/v1/market/regimes")
+            assert response.status_code == 200
+            assert response.json()["execution_enabled"] is False
+            return response.json()["symbols"]["BTCUSDT"]
+
+        assert current()["status"] == "READY"
+        for receipt_ms, reason in [
+            (None, "MARKET_STREAM_DISCONNECTED"),
+            (CURRENT_CLOCK_MS - 30_000, "MARKET_STREAM_STALE"),
+        ]:
+            stream.record_message(receipt_ms)
+            result = current()
+            assert result["status"] == "UNAVAILABLE"
+            assert result["reason"] == reason
+            assert "regime" not in result
+        stream.record_message(CURRENT_CLOCK_MS)
+        assert current()["status"] == "READY"
+
+        with full_history.begin() as connection:
+            connection.execute(
+                delete(Candle).where(
+                    Candle.symbol == "BTCUSDT",
+                    Candle.timeframe == "15m",
+                    Candle.open_time
+                    == datetime.fromtimestamp((ANCHOR_MS - 100 * FIFTEEN_MIN) / 1000, tz=UTC),
+                )
+            )
+        assert current()["reason"] == "15M_HISTORY_GAP"
+        assert current()["status"] == "UNAVAILABLE"
+
+
+def test_current_observation_waits_for_connected_stream(full_history: Engine) -> None:
+    service = RegimeResearchService(full_history)
+    stream = MarketStreamStore(full_history)
+    stream.record_message(None)
+    with pytest.raises(RegimeUnavailable, match="MARKET_STREAM_DISCONNECTED"):
+        service.observe_current("BTCUSDT", clock_ms=CURRENT_CLOCK_MS)
+    with Session(full_history) as session:
+        assert session.scalar(select(func.count()).select_from(RegimeSnapshot)) == 0
+
+    stream.record_message(CURRENT_CLOCK_MS)
+    assert service.observe_current("BTCUSDT", clock_ms=CURRENT_CLOCK_MS)["status"] == "READY"
