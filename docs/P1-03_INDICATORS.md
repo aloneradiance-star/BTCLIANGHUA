@@ -8,6 +8,11 @@ Use only `FinalCandle` produced by finalized Binance REST data (server clock ver
 
 Returned `FeatureRow` values are immutable Python `Decimal` or `None` (insufficient warm-up). `as_dict()` serializes Decimal as string to preserve precision.
 
+`compute_features()` uses 28 significant digits and round-half-even, with 40
+digits for Bollinger bands and realized volatility. The engine and
+`FeatureRow.as_dict()` use their own Decimal settings, so application or
+worker settings cannot change the calculations or exponent formatting.
+
 ## Mathematical conventions (version features-v0.1)
 | Feature | Initialization and formula | First valid zero-based index |
 | --- | --- | --- |

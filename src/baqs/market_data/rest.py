@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Sequence
+from math import isfinite
 from typing import cast
 
 import httpx
@@ -46,9 +47,16 @@ class PublicFuturesREST:
                     retry_after = exc.response.headers.get("Retry-After")
                     if retry_after is not None:
                         try:
-                            delay = min(60.0, max(0.0, float(retry_after)))
+                            requested_delay = float(retry_after)
                         except ValueError:
                             pass
+                        else:
+                            if isfinite(requested_delay) and requested_delay >= 0:
+                                if requested_delay > 60:
+                                    raise MarketDataError(
+                                        "Public REST Retry-After exceeds the 60-second retry budget"
+                                    ) from exc
+                                delay = max(delay, requested_delay)
             except ValueError as exc:
                 raise InvalidCandle("Public REST response is not JSON") from exc
             await asyncio.sleep(delay)
@@ -199,14 +207,21 @@ class PublicFuturesREST:
             if not isinstance(boundary_response, list) or len(boundary_response) >= 1000:
                 raise FundingGap("Funding pagination boundary is ambiguous")
             boundary_events = [from_funding_row(symbol, row) for row in boundary_response]
-            boundary_keys = {(item.funding_time_ms, item.rate_type) for item in boundary_events}
-            page_boundary_keys = {
-                (item.funding_time_ms, item.rate_type)
+            boundary_records = {
+                (item.funding_time_ms, item.rate_type): item for item in boundary_events
+            }
+            page_boundary_records = {
+                (item.funding_time_ms, item.rate_type): item
                 for item in page
                 if item.funding_time_ms == boundary_time
             }
-            if len(boundary_keys) != len(boundary_events) or boundary_keys != page_boundary_keys:
+            if (
+                len(boundary_records) != len(boundary_events)
+                or boundary_records.keys() != page_boundary_records.keys()
+            ):
                 raise FundingGap("Funding page split events sharing one funding timestamp")
+            if boundary_records != page_boundary_records:
+                raise FundingGap("Funding pagination boundary returned inconsistent event values")
             cursor = boundary_time + 1
             if cursor >= end_ms:
                 return result

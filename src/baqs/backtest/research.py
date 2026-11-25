@@ -8,7 +8,15 @@ import argparse
 import json
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import (
+    ROUND_HALF_EVEN,
+    Context,
+    Decimal,
+    DivisionByZero,
+    InvalidOperation,
+    Overflow,
+    localcontext,
+)
 from hashlib import sha256
 from typing import Any, Literal, cast
 
@@ -43,6 +51,16 @@ from baqs.strategies.s01 import S01Config, S01TrendPullbackStrategy
 WARMUP_15M_BARS = 2920
 WARMUP_1H_BARS = 120
 MAX_EXECUTION_BARS = 50_000
+_REPLAY_DECIMAL_CONTEXT = Context(
+    prec=28,
+    rounding=ROUND_HALF_EVEN,
+    Emin=-999_999,
+    Emax=999_999,
+    capitals=1,
+    clamp=0,
+    flags=[],
+    traps=[InvalidOperation, DivisionByZero, Overflow],
+)
 LIMITATIONS = (
     "Research simulation only; not financial advice or a profitability claim.",
     "Execution uses 1m OHLC bars; intrabar price paths are unknown.",
@@ -145,7 +163,12 @@ def _load_candles(
         open_ms = _milliseconds(row.open_time)
         close_ms = _milliseconds(row.close_time)
         expected_open = start_ms + index * step
-        if open_ms != expected_open or close_ms != expected_open + step:
+        if (
+            row.open_time.microsecond != 0
+            or row.close_time.microsecond != 0
+            or open_ms != expected_open
+            or close_ms != expected_open + step
+        ):
             raise BacktestUnavailable(f"{timeframe.upper()}_GAP_OR_MISALIGNED_CLOSE")
         if not row.is_final:
             raise BacktestUnavailable(f"{timeframe.upper()}_NON_FINAL_CANDLE")
@@ -328,6 +351,10 @@ class S01ResearchService:
         )
 
         funding_snapshot = self.funding_store.load_window(symbol, start_ms, end_ms)
+        if any(
+            timestamp % INTERVAL_MS["1m"] for timestamp in funding_snapshot.expected_timestamps_ms
+        ):
+            raise BacktestUnavailable("OFF_MINUTE_EVENTS")
         funding_events = tuple(
             FundingEvent(
                 symbol=record.symbol,
@@ -420,19 +447,20 @@ class S01ResearchService:
         ):
             raise ValueError("Research window must be a positive, 15m-aligned UTC interval")
         try:
-            inputs = self._load_inputs(symbol, start_ms, end_ms)
-            signals = self.strategy.generate_signals(
-                list(inputs.signal_bars_15m),
-                list(inputs.context_bars_1h),
-            )
-            result = BacktestEngine().run(
-                inputs.execution_bars,
-                signals,
-                inputs.funding_events,
-                inputs.funding_coverage,
-                self.costs,
-                self.config,
-            )
+            with localcontext(_REPLAY_DECIMAL_CONTEXT):
+                inputs = self._load_inputs(symbol, start_ms, end_ms)
+                signals = self.strategy.generate_signals(
+                    list(inputs.signal_bars_15m),
+                    list(inputs.context_bars_1h),
+                )
+                result = BacktestEngine().run(
+                    inputs.execution_bars,
+                    signals,
+                    inputs.funding_events,
+                    inputs.funding_coverage,
+                    self.costs,
+                    self.config,
+                )
         except (BacktestUnavailable, CandleGap, FundingGap, InvalidCandle, ValueError) as exc:
             return S01ResearchReport(
                 status="UNAVAILABLE",

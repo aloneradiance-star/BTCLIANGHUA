@@ -6,6 +6,7 @@ Research infrastructure for public Binance USDⓈ-M futures market data. **Not a
 - Symbols: `BTCUSDT`, `ETHUSDT`.
 - Default mode: `PAPER`. A `BAQS_LIVE_ENABLED=true` value makes startup fail.
 - Read-only API; no exchange keys, no account access, no order placement.
+- The health endpoint returns `503 DEGRADED` when the required database schema cannot be read.
 - Rules and thresholds are research hypotheses, not validated profits.
 - Do not use this project to circumvent account eligibility or jurisdictional restrictions.
 
@@ -41,9 +42,10 @@ python -m baqs.market_data.runner
 Only public REST time/klines and public WebSocket `/market/stream` are used.
 This research collector is **not enabled automatically** by the API server.
 See `docs/P1-02_PUBLIC_DATA.md` for finalized-candle rules, gap repair and
-limitations. The `GET /api/v1/market/health` endpoint reports data staleness
-and gaps. With no recent data, `GET /api/v1/health` returns HTTP 503; the
-database can be connected while the market feed remains unhealthy.
+limitations. The `GET /api/v1/market/health` endpoint reports the collector
+connection status and per-feed candle quality. `GET /api/v1/health` returns
+HTTP 503 when the collector is unavailable or any feed has missing, stale
+or gapped data.
 
 ## Docker development
 ```bash
@@ -79,7 +81,8 @@ Optional continuous research-only polling:
 python -m baqs.regime.runner --poll-seconds 15
 ```
 `GET /api/v1/market/regimes?timeframe=5m` returns the latest verified
-research state or `UNAVAILABLE` with a reason when candles are missing/stale.
+research state or `UNAVAILABLE` with a reason when the latest snapshot or
+required candles are unavailable, or the collector connection is unhealthy.
 Other supported timeframe values expose historical snapshots only. Output is
 **not** a trade order, not a calibrated probability and not an investment
 recommendation. See `docs/P1-04_REGIME_CLASSIFIER.md`.
@@ -112,3 +115,14 @@ associated `markPrice` and `rateType`. Readiness is exposed at
 Missing 1m candles, missing funding rows, altered source fingerprints or an
 incomplete coverage manifest keep the result UNAVAILABLE. No private API or
 trading order path is introduced.
+
+## P2-03 / S01 historical research replay
+
+See [the historical replay guide](docs/P2-03_S01_HISTORICAL_BACKTEST.md) for
+the exact data window, indicator warm-up, funding manifest, and
+`python -m baqs.backtest.research` command with explicit costs.
+Run the offline acceptance tests with:
+
+```bash
+python -m pytest -q tests/test_s01_research.py
+```

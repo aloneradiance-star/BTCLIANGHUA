@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
 from sqlalchemy import select
@@ -14,18 +14,22 @@ from baqs.market_data.schema import (
     FundingConflict,
     FundingGap,
     FundingRateRecord,
+    InvalidCandle,
 )
 from baqs.models import FundingCoverageRecord, FundingRate
 
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+_MILLISECOND = timedelta(milliseconds=1)
+
 
 def _datetime(timestamp_ms: int) -> datetime:
-    return datetime.fromtimestamp(timestamp_ms / 1000, tz=UTC)
+    return _EPOCH + timestamp_ms * _MILLISECOND
 
 
 def _milliseconds(value: datetime) -> int:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
-    return int(value.timestamp() * 1000)
+    return (value - _EPOCH) // _MILLISECOND
 
 
 def _fingerprint(record: FundingRateRecord) -> str:
@@ -96,14 +100,19 @@ class FundingStore:
 
     @staticmethod
     def _row_record(row: FundingRate) -> FundingRateRecord:
-        return FundingRateRecord(
-            symbol=row.symbol,
-            funding_time_ms=_milliseconds(row.funding_time),
-            funding_rate=row.funding_rate,
-            mark_price=row.mark_price,
-            rate_type=row.rate_type,
-            source=row.source,
-        )
+        if row.funding_time.microsecond % 1000:
+            raise FundingGap("Persisted funding timestamp is not an exact millisecond")
+        try:
+            return FundingRateRecord(
+                symbol=row.symbol,
+                funding_time_ms=_milliseconds(row.funding_time),
+                funding_rate=row.funding_rate,
+                mark_price=row.mark_price,
+                rate_type=row.rate_type,
+                source=row.source,
+            )
+        except InvalidCandle as exc:
+            raise FundingGap("Invalid persisted funding record") from exc
 
     def complete_window(
         self,
@@ -181,7 +190,9 @@ class FundingStore:
             session.commit()
             return "CREATED"
 
-    def coverage_readiness(self, symbol: str, start_ms: int, end_ms: int) -> dict[str, object]:
+    def coverage_readiness(
+        self, symbol: str, start_ms: int, end_ms: int, *, require_minute_aligned: bool = False
+    ) -> dict[str, object]:
         if (
             symbol not in SYMBOLS
             or type(start_ms) is not int
@@ -217,22 +228,30 @@ class FundingStore:
                 )
                 .order_by(FundingRate.funding_time, FundingRate.rate_type)
             ).all()
-            stored = [self._row_record(row) for row in rows]
-            actual_times = [_milliseconds(row.funding_time) for row in rows]
-            actual_fingerprints = [_fingerprint(record) for record in stored]
-            if (
-                actual_times != coverage.expected_timestamps_ms
-                or actual_fingerprints != coverage.expected_event_fingerprints
-                or len(rows) != coverage.event_count
-            ):
+            try:
+                stored = [self._row_record(row) for row in rows]
+                actual_times = [record.funding_time_ms for record in stored]
+                matches = (
+                    actual_times == coverage.expected_timestamps_ms
+                    and [_fingerprint(record) for record in stored]
+                    == coverage.expected_event_fingerprints
+                    and len(rows) == coverage.event_count
+                )
+            except FundingGap:
+                matches = False
+                actual_times = []
+            if not matches:
                 return {
                     "status": "GAP",
                     "symbol": symbol,
                     "expected_events": coverage.event_count,
                     "present_events": len(rows),
                 }
+            status = "READY"
+            if require_minute_aligned and any(timestamp % 60_000 for timestamp in actual_times):
+                status = "OFF_MINUTE_EVENTS"
             return {
-                "status": "READY",
+                "status": status,
                 "symbol": symbol,
                 "start_ms": start_ms,
                 "end_ms": end_ms,
