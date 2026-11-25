@@ -60,6 +60,11 @@ The funding CLI defaults to both BTCUSDT and ETHUSDT; use `--symbols BTCUSDT` or
 complete, fingerprint-verified funding manifest. Missing or tampered
 coverage returns UNAVAILABLE.
 
+The read-only `GET /api/v1/market/backtest-readiness` endpoint checks an
+exact window of up to 129,600 execution minutes. A 90-day readiness check
+verifies archive coverage for that window. Each simulated fold still needs
+its own exact manifest and remains within the 50,000-minute replay cap.
+
 ## Walk-forward command
 
 ```bash

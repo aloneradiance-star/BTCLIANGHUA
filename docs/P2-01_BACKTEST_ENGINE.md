@@ -8,6 +8,8 @@ broker, exchange adapter, order router, live signal service or proof of alpha.
 - Execution: contiguous, finalized 1m candles for one symbol.
 - Strategy: contiguous, finalized 15m candles and 1h candles for the same symbol.
 - Signals are evaluated at the exclusive close boundary of a completed 15m bar.
+  Both 15m feature timestamps must match their candles. The 1h trend feature
+  must represent a complete UTC hour closed by the signal boundary.
   The earliest possible entry is the next 1m bar open at that same boundary.
   A signal at the final exclusive boundary is recorded as skipped with reason
   `NO_NEXT_1M_EXECUTION_BAR`.
@@ -61,13 +63,16 @@ parameters. The signal is not a calibrated probability or trade recommendation.
 - Fixed take-profit is 2R from the adverse-slippage entry fill; stop is the
   strategy's structural stop.
 - All fills are assumed taker. Fee and adverse slippage in bps are explicit.
+- If the next 1m open is at or beyond the structural stop, skip the entry
+  before applying slippage. A skipped entry has no fill, fee or exposure.
 - 1m OHLC handles stops and targets. If both levels are touched in one 1m
   candle, stop executes first. A gap through a stop fills at the worse bar open.
   This is conservative but does not model order-book depth, partial fills,
   spread dynamics or market impact.
 - Funding is assessed only when a position was already open before the funding
-  timestamp. Positive funding costs longs and credits shorts; negative funding
-  reverses the cash flow.
+  timestamp. It is assessed before entries and stop-gap exits at that boundary.
+  Positive funding costs longs and credits shorts; negative funding reverses
+  the cash flow.
 - Signals arriving while a position is already open are recorded as skipped;
   a position closed inside a minute cannot be reopened in that same minute.
 - A short setup whose fixed 2R take-profit would be nonpositive is skipped.

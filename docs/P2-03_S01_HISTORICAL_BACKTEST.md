@@ -16,10 +16,11 @@ For a requested 15m-aligned half-open UTC window `[start_ms, end_ms)`:
 
 - Load exactly every finalized 1m execution candle in the requested interval.
   Missing minutes, non-final rows, invalid boundaries, missing quote volume or
-  missing trade counts return `UNAVAILABLE`. Future evaluation windows are also
-  rejected even if future-dated rows have been manually inserted.
+  missing trade counts return `UNAVAILABLE`. Exact timestamp checks apply to
+  all three candle timeframes, including sub-millisecond offsets. Future
+  evaluation windows are rejected even if future rows have been inserted.
 - Load **2,920 preceding finalized 15m candles plus all 15m evaluation candles**.
-  This is the full 30-day empirical-percentile warm-up required by S01.
+  This is the fixed warm-up for the historical research runner.
 - Load **120 preceding closed 1h candles**, anchored to the last completed hour
   at or before the evaluation start, plus subsequent 1h candles only when their
   exclusive close boundary is no later than the evaluation end.
@@ -28,6 +29,8 @@ For a requested 15m-aligned half-open UTC window `[start_ms, end_ms)`:
 - Load the exact funding `[start_ms, end_ms)` manifest using the stored source
   fingerprints. Missing, incomplete, tampered or conflicting manifests return
   `UNAVAILABLE`. Regular and Special events at one timestamp remain separate.
+  A verified manifest with between-minute settlements returns
+  `UNAVAILABLE` with reason `OFF_MINUTE_EVENTS`.
 - Signals are generated from closed 15m candles. The P2-01 engine can enter only
   at the next 1m open; the final exclusive boundary cannot create a fill.
 
@@ -98,9 +101,11 @@ stdout. A valid run has `status=READY`; incomplete data has
 - Strategy version and every active S01 threshold, explicit cost/risk assumptions
   and model limitations.
 
-JSON serialization uses stable key ordering and Decimal strings. The report has
-no wall-clock run timestamp, so replaying unchanged inputs and assumptions
-produces byte-for-byte identical JSON.
+JSON serialization uses stable key ordering and Decimal strings. Replay
+arithmetic uses an isolated Decimal context with 28 significant digits and
+round-half-even. The feature engine retains its documented 40-digit arithmetic
+for Bollinger bands and realized volatility. With unchanged inputs, settings
+and code, the report JSON is byte-for-byte reproducible.
 
 ## Model limitations
 
@@ -116,4 +121,5 @@ of future performance.
 Offline integration tests cover exact-window loading, 15m/1h warm-up, future
 hour exclusion, missing/gapped/non-final data, missing quote/trade metadata,
 absent/tampered funding manifests, same-time Regular/Special events,
-deterministic repeatability, zero database writes, and successful engine replay.
+off-minute funding, exact timestamp boundaries, deterministic repeatability,
+zero database writes, and an end-to-end replay using the actual S01 rules.
