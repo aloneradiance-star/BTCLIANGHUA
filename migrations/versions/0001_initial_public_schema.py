@@ -41,11 +41,18 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.PrimaryKeyConstraint("symbol", "timeframe", "open_time", name="pk_candles"),
-        sa.CheckConstraint("high >= low", name="ck_candles_high_low"),
-        sa.CheckConstraint("high >= open AND high >= close", name="ck_candles_high_ohlc"),
-        sa.CheckConstraint("low <= open AND low <= close", name="ck_candles_low_ohlc"),
-        sa.CheckConstraint("volume >= 0", name="ck_candles_volume_nonnegative"),
-        sa.CheckConstraint("timeframe IN ('1m','5m','15m','1h')", name="ck_candles_timeframe"),
+        # Pin the names from the original migration, including the applied prefix.
+        sa.CheckConstraint("high >= low", name=op.f("ck_candles_ck_candles_high_low")),
+        sa.CheckConstraint(
+            "high >= open AND high >= close", name=op.f("ck_candles_ck_candles_high_ohlc")
+        ),
+        sa.CheckConstraint(
+            "low <= open AND low <= close", name=op.f("ck_candles_ck_candles_low_ohlc")
+        ),
+        sa.CheckConstraint("volume >= 0", name=op.f("ck_candles_ck_candles_volume_nonnegative")),
+        sa.CheckConstraint(
+            "timeframe IN ('1m','5m','15m','1h')", name=op.f("ck_candles_ck_candles_timeframe")
+        ),
     )
     op.create_index("ix_candles_recent", "candles", ["symbol", "timeframe", "open_time"])
     op.create_table(
@@ -80,7 +87,7 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "regime IN ('BULL_TREND','BEAR_TREND','RANGE','BREAKOUT','HIGH_RISK','TRANSITION')",
-            name="ck_regime_snapshots_valid_regime",
+            name=op.f("ck_regime_snapshots_ck_regime_snapshots_valid_regime"),
         ),
     )
     op.create_index(

@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from baqs.indicators import compute_features
-from baqs.market_data.repository import CandleStore
+from baqs.market_data.repository import CandleStore, MarketStreamStore
 from baqs.market_data.schema import INTERVAL_MS, SYMBOLS, FinalCandle
 from baqs.models import Candle, RegimeSnapshot
 from baqs.regime.gate import FIVE_MIN_MS, GateState, advance
@@ -57,6 +57,11 @@ class RegimeResearchService:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
         self.store = CandleStore(engine)
+        self.market_stream = MarketStreamStore(engine)
+
+    def _market_stream_failure(self) -> str | None:
+        status = self.market_stream.health()["status"]
+        return None if status == "CONNECTED" else f"MARKET_STREAM_{status}"
 
     def _load(
         self,
@@ -102,11 +107,18 @@ class RegimeResearchService:
             .limit(1)
         )
 
+    def observe_current(self, symbol: str, *, clock_ms: int) -> dict[str, object]:
+        """Observe the latest close only while the public collector is healthy."""
+        if reason := self._market_stream_failure():
+            raise RegimeUnavailable(reason)
+        return self.observe(
+            symbol, close_ms=clock_ms // FIVE_MIN_MS * FIVE_MIN_MS, clock_ms=clock_ms
+        )
+
     def observe(self, symbol: str, *, close_ms: int, clock_ms: int) -> dict[str, object]:
         """Persist one closed 5m observation after strict as-of readiness.
 
-        When replaying fixtures, the caller provides an explicit matching clock.
-        Actual runner supplies UTC wall clock and never evaluates a future 5m bar.
+        Historical and offline replay supply an explicit matching clock.
         """
         if symbol not in SYMBOLS:
             raise ValueError("Unsupported research symbol")
@@ -147,7 +159,8 @@ class RegimeResearchService:
                     raise RegimeUnavailable("CORRUPT_PERSISTED_GATE_STATE") from exc
                 last_close = _as_milliseconds(previous.candle_close_time)
                 if (
-                    gate_state.last_processed_ms != last_close
+                    previous.candle_close_time.microsecond != 0
+                    or gate_state.last_processed_ms != last_close
                     or gate_state.current != previous.regime
                 ):
                     raise RegimeUnavailable("GATE_STATE_SNAPSHOT_MISMATCH")
@@ -230,7 +243,8 @@ class RegimeResearchService:
                         }
                 return {"status": "UNAVAILABLE", "reason": "NO_CLASSIFICATION"}
             close_ms = _as_milliseconds(last.candle_close_time)
-            if close_ms > clock_ms or clock_ms - close_ms >= 2 * FIVE_MIN_MS:
+            expected_close_ms = clock_ms // FIVE_MIN_MS * FIVE_MIN_MS
+            if close_ms != expected_close_ms or last.candle_close_time.microsecond != 0:
                 return {
                     "status": "UNAVAILABLE",
                     "reason": "STALE_CLASSIFICATION",
@@ -258,4 +272,6 @@ class RegimeResearchService:
                         "status": "UNAVAILABLE",
                         "reason": f"{timeframe.upper()}_HISTORY_{readiness['status']}",
                     }
+            if reason := self._market_stream_failure():
+                return {"status": "UNAVAILABLE", "reason": reason}
             return self._serialize(last)

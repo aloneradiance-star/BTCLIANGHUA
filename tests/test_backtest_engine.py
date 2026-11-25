@@ -143,6 +143,52 @@ def test_gap_through_stop_fills_at_worse_open_not_stop_price() -> None:
     assert trade.exit_fill_price < Decimal(80)
 
 
+@pytest.mark.parametrize(
+    ("side", "stop"),
+    [
+        ("LONG", "100"),
+        ("LONG", "100.025"),
+        ("SHORT", "100"),
+        ("SHORT", "99.975"),
+    ],
+)
+def test_adverse_slippage_does_not_rescue_entry_at_or_beyond_stop(side: str, stop: str) -> None:
+    result = run([bar(0), bar(1)], [signal(side, stop)])
+    assert result.trades == ()
+    assert [skipped.reason for skipped in result.skipped_signals] == ["STOP_ON_WRONG_SIDE"]
+    assert result.metrics.total_fees == 0
+    assert result.metrics.exposure_fraction == 0
+
+
+@pytest.mark.parametrize(
+    ("side", "stop", "exit_open", "funding_sign"),
+    [("LONG", "90", "80", 1), ("SHORT", "110", "120", -1)],
+)
+def test_funding_at_entry_and_opening_stop_boundaries(
+    side: str, stop: str, exit_open: str, funding_sign: int
+) -> None:
+    execution = [bar(0), bar(1, open_=exit_open, high=exit_open, low=exit_open, close=exit_open)]
+    entry_time, exit_time = (candle.open_ms for candle in execution)
+    entry_event = FundingEvent("BTCUSDT", entry_time, Decimal(".01"), Decimal(98))
+    exit_event = FundingEvent("BTCUSDT", exit_time, Decimal(".001"), Decimal(105))
+    result = run(
+        execution,
+        [signal(side, stop)],
+        events=[entry_event, exit_event],
+        expected=(entry_time, exit_time),
+    )
+    trade = result.trades[0]
+    assert trade.exit_reason == "STOP_GAP"
+    assert trade.exit_reference_price == Decimal(exit_open)
+    assert trade.entry_time_ms == entry_time
+    assert trade.exit_bar_open_ms == exit_time
+    assert (
+        trade.funding_cost
+        == funding_sign * trade.quantity * exit_event.mark_price * exit_event.rate
+    )
+    assert trade.net_pnl == trade.gross_pnl - trade.fees - trade.funding_cost
+
+
 def test_funding_manifest_must_match_exactly() -> None:
     bars = [bar(0), bar(1), bar(2)]
     with pytest.raises(BacktestUnavailable, match="FUNDING_EVENTS"):

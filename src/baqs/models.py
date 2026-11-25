@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -19,20 +20,35 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.schema import conv
 
 from baqs.db import Base
 
 json_type = JSON().with_variant(JSONB(), "postgresql")
 
 
+class MarketStreamState(Base):
+    __tablename__ = "market_stream_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    last_message_ms: Mapped[int | None] = mapped_column(BigInteger)
+
+
 class Candle(Base):
     __tablename__ = "candles"
     __table_args__ = (
-        CheckConstraint("high >= low", name="high_low"),
-        CheckConstraint("high >= open AND high >= close", name="high_ohlc"),
-        CheckConstraint("low <= open AND low <= close", name="low_ohlc"),
-        CheckConstraint("volume >= 0", name="volume_nonnegative"),
-        CheckConstraint("timeframe IN ('1m','5m','15m','1h')", name="timeframe"),
+        # Preserve the final names already applied by revision 0001_public.
+        CheckConstraint("high >= low", name=conv("ck_candles_ck_candles_high_low")),
+        CheckConstraint(
+            "high >= open AND high >= close", name=conv("ck_candles_ck_candles_high_ohlc")
+        ),
+        CheckConstraint(
+            "low <= open AND low <= close", name=conv("ck_candles_ck_candles_low_ohlc")
+        ),
+        CheckConstraint("volume >= 0", name=conv("ck_candles_ck_candles_volume_nonnegative")),
+        CheckConstraint(
+            "timeframe IN ('1m','5m','15m','1h')", name=conv("ck_candles_ck_candles_timeframe")
+        ),
         Index("ix_candles_recent", "symbol", "timeframe", "open_time"),
     )
 
@@ -59,7 +75,7 @@ class RegimeSnapshot(Base):
     __table_args__ = (
         CheckConstraint(
             "regime IN ('BULL_TREND','BEAR_TREND','RANGE','BREAKOUT','HIGH_RISK','TRANSITION')",
-            name="valid_regime",
+            name=conv("ck_regime_snapshots_ck_regime_snapshots_valid_regime"),
         ),
         UniqueConstraint("symbol", "timeframe", "candle_close_time", "classifier_version"),
         Index("ix_regimes_recent", "symbol", "timeframe", "candle_close_time"),

@@ -5,9 +5,9 @@ requests, account access, leverage settings, or trading endpoints.
 
 ## Why
 The 15-minute 30-day empirical percentile has 2880 previous reference observations.
-With 20-bar Bollinger warm-up, the first 30-day BB-width percentile is at index
-2899. With 20 log-return realized volatility warm-up, the first realized-volatility
-30-day percentile is at index 2900 (0-based). The mathematical minimum complete sequence is **2901 consecutive finalized 15m candles**.
+With 20-bar Bollinger warm-up, the first 30-day BB-width percentile needs
+**2,900 consecutive finalized 15m candles**. With 20 log-return realized-volatility
+warm-up, the first realized-volatility percentile needs **2,901**.
 Project acceptance sets a stricter **2,920-bar operational minimum** to provide a buffer.
 The 1h EMA60 mathematical minimum is 60 bars; the project classifier readiness gate requires 120 bars, which is also the CLI minimum and default.
 
@@ -55,8 +55,10 @@ because some or most rows exist.
 ## Readiness
 `GET /api/v1/market/history-readiness` exposes per-symbol `15m` and
 `1h` health for a UTC observation time (2,920 required 15m bars and 120 required 1h bars). A ready result requires exactly
-the requested trailing window of expected completed candles, exact exclusive close boundaries,
-and no gaps within it. `READY`, `NO_DATA`, `INSUFFICIENT`, `GAP` or `STALE`
+the requested trailing window of expected completed candles, exact UTC open and
+exclusive close boundaries, and no gaps within it. Comparison uses stored
+timestamp precision, so a sub-millisecond offset invalidates the window.
+`READY`, `NO_DATA`, `INSUFFICIENT`, `GAP` or `STALE`
 must remain explicit; no market probabilities or trade signals.
 
 Readiness reports describe **Kline coverage only**. They do not validate

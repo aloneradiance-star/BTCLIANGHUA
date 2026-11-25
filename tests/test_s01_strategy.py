@@ -143,6 +143,31 @@ def test_latest_completed_feature_never_uses_future_hour() -> None:
     assert latest_completed_feature([older, future], 7_200_000) == future
 
 
+@pytest.mark.parametrize("wrong_feature", ["current", "previous", "higher"])
+def test_s01_rejects_features_without_exact_candle_boundaries(wrong_feature: str) -> None:
+    previous_bar = candle("15m", BASE, open_="105", high="107", low="103", close="104")
+    current_bar = candle("15m", BASE + 900_000, open_="105", high="112", low="104", close="110")
+    features = {
+        "current": feature("15m", BASE + 900_000),
+        "previous": feature("15m", BASE),
+        "higher": feature("1h", 0, ema20="120", ema60="110"),
+    }
+    invalid = features[wrong_feature]
+    features[wrong_feature] = replace(
+        invalid,
+        open_ms=invalid.open_ms + 60_000,
+        close_ms=invalid.close_ms + (60_000 if wrong_feature == "higher" else 0),
+    )
+    with pytest.raises(ValueError, match="alignment"):
+        evaluate_s01_signal(
+            current_bar,
+            previous_bar,
+            features["current"],
+            features["previous"],
+            features["higher"],
+        )
+
+
 def test_missing_feature_warmup_returns_no_signal() -> None:
     previous_bar = candle("15m", BASE, open_="105", high="107", low="103", close="104")
     current_bar = candle("15m", BASE + 900_000, open_="105", high="112", low="104", close="110")

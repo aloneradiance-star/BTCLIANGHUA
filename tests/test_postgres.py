@@ -3,11 +3,13 @@
 import os
 from datetime import UTC, datetime
 from decimal import Decimal
+from time import time_ns
 
 import pytest
 from sqlalchemy import create_engine, delete, insert, select
 
-from baqs.models import Candle, FundingRate
+from baqs.market_data.repository import MarketStreamStore
+from baqs.models import Candle, FundingRate, MarketStreamState
 
 
 @pytest.mark.skipif(
@@ -82,3 +84,26 @@ def test_postgresql_numeric_precision_and_utc() -> None:
             )
     finally:
         engine.dispose()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("BAQS_TEST_POSTGRES_URL"),
+    reason="PostgreSQL integration URL not provided",
+)
+def test_postgresql_market_stream_status_is_shared_between_engines() -> None:
+    url = os.environ["BAQS_TEST_POSTGRES_URL"]
+    writer = create_engine(url)
+    reader = create_engine(url)
+    try:
+        publisher = MarketStreamStore(writer)
+        observer = MarketStreamStore(reader)
+        received_ms = time_ns() // 1_000_000
+        publisher.record_message(received_ms)
+        assert observer.health() == {"status": "CONNECTED", "last_message_ms": received_ms}
+        publisher.record_message(None)
+        assert observer.health() == {"status": "DISCONNECTED", "last_message_ms": None}
+    finally:
+        with writer.begin() as conn:
+            conn.execute(delete(MarketStreamState))
+        writer.dispose()
+        reader.dispose()

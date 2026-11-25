@@ -181,6 +181,11 @@ def from_ws_message(payload: object) -> FinalCandle | None:
     )
 
 
+def _exact_decimal_text(value: Decimal) -> str:
+    text = format(value, "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
 @dataclass(frozen=True, slots=True)
 class FundingRateRecord:
     """One public USD-M funding settlement with Binance's associated mark price."""
@@ -195,12 +200,8 @@ class FundingRateRecord:
     def __post_init__(self) -> None:
         if self.symbol not in SYMBOLS:
             raise InvalidCandle("Unsupported funding symbol")
-        if (
-            type(self.funding_time_ms) is not int
-            or self.funding_time_ms < 0
-            or self.funding_time_ms % 60_000
-        ):
-            raise InvalidCandle("Funding time must be an exact 1m UTC boundary")
+        if type(self.funding_time_ms) is not int or self.funding_time_ms < 0:
+            raise InvalidCandle("Funding time must be a nonnegative integer in milliseconds")
         if (
             not self.funding_rate.is_finite()
             or not self.mark_price.is_finite()
@@ -216,8 +217,8 @@ class FundingRateRecord:
         return (
             self.symbol,
             self.funding_time_ms,
-            format(self.funding_rate.normalize(), "f"),
-            format(self.mark_price.normalize(), "f"),
+            _exact_decimal_text(self.funding_rate),
+            _exact_decimal_text(self.mark_price),
             self.rate_type,
             self.source,
         )

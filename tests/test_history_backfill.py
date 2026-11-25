@@ -1,16 +1,20 @@
 """Checkpoint recovery, REST strictness and fail-closed public-only historical sync."""
 
 import asyncio
+from datetime import UTC
 from decimal import Decimal
 
 import httpx
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
+from sqlalchemy.orm import Session
 
+from baqs.indicators import compute_features
 from baqs.market_data.history import PublicHistoryBackfill
 from baqs.market_data.repository import CandleStore
 from baqs.market_data.rest import PublicFuturesREST
-from baqs.market_data.schema import CandleConflict, CandleGap, FinalCandle
+from baqs.market_data.schema import INTERVAL_MS, CandleConflict, CandleGap, FinalCandle
+from baqs.models import Candle
 
 STEP = 3_600_000
 ANCHOR = 200 * STEP
@@ -143,33 +147,48 @@ def test_strict_minimum_15m_reference_window(db_engine: Engine) -> None:
     asyncio.run(run())
 
 
-def test_public_http_transport_integration_with_all_expected_bars(db_engine: Engine) -> None:
+@pytest.mark.parametrize("symbol", ["BTCUSDT", "ETHUSDT"])
+@pytest.mark.parametrize(("timeframe", "count"), [("15m", 2920), ("1h", 120)])
+def test_public_backfill_replays_persisted_bars_through_feature_engine(
+    db_engine: Engine, symbol: str, timeframe: str, count: int
+) -> None:
+    step = INTERVAL_MS[timeframe]
+    anchor = 1_800_000_000_000
+    price = 100 if symbol == "BTCUSDT" else 200
+    requests: list[tuple[int, int]] = []
+
     def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert "x-mbx-apikey" not in request.headers and "signature" not in request.url.params
         if request.url.path == "/fapi/v1/time":
-            return httpx.Response(200, json={"serverTime": ANCHOR})
+            return httpx.Response(200, json={"serverTime": anchor + step - 1})
         assert request.url.path == "/fapi/v1/klines"
-        assert request.url.params["symbol"] == "BTCUSDT"
-        start = int(request.url.params["startTime"]) // STEP
-        end = int(request.url.params["endTime"]) // STEP
-        limit = int(request.url.params["limit"])
+        assert request.url.params["symbol"] == symbol
+        assert request.url.params["interval"] == timeframe
+        start = int(request.url.params["startTime"])
+        end = int(request.url.params["endTime"]) + 1
+        assert 1 <= int(request.url.params["limit"]) == (end - start) // step <= 400
+        assert start % step == end % step == 0
+        assert end <= anchor
+        requests.append((start, end))
         return httpx.Response(
             200,
             json=[
                 [
-                    i * STEP,
-                    "100",
-                    "104",
-                    "98",
-                    "101",
+                    open_ms,
+                    str(price),
+                    str(price + 2),
+                    str(price - 2),
+                    str(price),
                     "1",
-                    (i + 1) * STEP - 1,
-                    "100",
+                    open_ms + step - 1,
+                    str(price),
                     5,
                     "0",
                     "0",
                     "0",
                 ]
-                for i in range(start, min(end + 1, start + limit))
+                for open_ms in range(start, end, step)
             ],
         )
 
@@ -179,14 +198,52 @@ def test_public_http_transport_integration_with_all_expected_bars(db_engine: Eng
             base_url="https://fapi.binance.com",
             transport=httpx.MockTransport(handler),
         ) as client:
-            report = await PublicHistoryBackfill(
-                PublicFuturesREST(client),
-                store,
-                chunk_bars=20,
-                pause_seconds=0,
-            ).run("BTCUSDT", "1h", bars=120)
-        assert report.fetched_bars == 120
-        assert report.readiness == "READY"
+            history = PublicHistoryBackfill(PublicFuturesREST(client), store, pause_seconds=0)
+            report = await history.run(symbol, timeframe)
+            assert report.readiness == "READY"
+            assert report.fetched_bars == report.created_bars == count
+            assert report.anchored_end_ms == anchor
+            assert requests[0][0] == anchor - count * step
+            assert requests[-1][1] == anchor
+            page_count = len(requests)
+            resumed = await history.run(symbol, timeframe)
+            assert resumed.reused_chunks == page_count == len(requests)
+            assert resumed.created_bars == resumed.fetched_bars == 0
+
+        with Session(db_engine) as session:
+            rows = session.scalars(select(Candle).order_by(Candle.open_time)).all()
+        assert len(rows) == count
+        bars = []
+        for row in rows:
+            assert row.symbol == symbol and row.timeframe == timeframe and row.is_final
+            assert row.quote_volume is not None and row.trade_count is not None
+            bars.append(
+                FinalCandle(
+                    row.symbol,
+                    row.timeframe,
+                    int(row.open_time.replace(tzinfo=UTC).timestamp() * 1000),
+                    int(row.close_time.replace(tzinfo=UTC).timestamp() * 1000),
+                    row.open,
+                    row.high,
+                    row.low,
+                    row.close,
+                    row.volume,
+                    row.quote_volume,
+                    row.trade_count,
+                    row.source,
+                )
+            )
+        features = compute_features(bars)
+        if timeframe == "15m":
+            assert features[2898].bb_width_percentile_30d is None
+            assert features[2899].bb_width_percentile_30d == Decimal(1)
+            assert features[2899].realized_vol_percentile_30d is None
+            assert features[2900].realized_vol_percentile_30d == Decimal(1)
+            assert features[-1].bb_width_percentile_30d == Decimal(1)
+            assert features[-1].realized_vol_percentile_30d == Decimal(1)
+        else:
+            assert features[58].ema60 is None
+            assert features[59].ema60 == Decimal(price)
 
     asyncio.run(run())
 
