@@ -77,9 +77,10 @@ The lower-level collectors remain available when separate operation is needed:
 
 ## Persistence and readiness
 
-- The existing `candles` table stores 1m execution bars. Backfill now supports
-  up to 50,000 bars and commits each verified chunk atomically instead of
-  opening one database transaction per candle.
+- The existing `candles` table stores 1m execution bars. Backfill supports
+  explicit, interval-aligned UTC ranges up to 90 days (1m: 129,600 bars;
+  15m: 8,640; 1h: 2,160) and commits each verified 400-bar chunk atomically.
+  The default 1m command remains 43,200 bars / 30 days.
 - `funding_rates` has a composite key `(symbol, funding_time, rate_type)`
   so Regular and Special observations at the same funding timestamp are both
   retained. Funding rate and associated mark price use Decimal/Numeric storage.

@@ -100,9 +100,12 @@ backtest-readiness gate. A CI pass is not a profitability result.
 
 ## P2-02 / Public historical backtest data
 
-Manual public 1m execution-history backfill (default 43,200 bars / 30 days):
+Manual public 1m execution-history backfill (default 43,200 bars / 30 days;
+explicit interval-aligned UTC ranges are supported up to 90 days):
 ```bash
 python -m baqs.market_data.backfill --timeframe 1m --symbols BTCUSDT ETHUSDT
+# Optional explicit range:
+python -m baqs.market_data.backfill --timeframe 1m --symbols BTCUSDT ETHUSDT --start-ms <START_MS> --end-ms <END_MS>
 ```
 Use the exact `start_ms` and `anchored_end_ms` printed in the candle backfill
 report for the matching funding window:
@@ -126,3 +129,20 @@ Run the offline acceptance tests with:
 ```bash
 python -m pytest -q tests/test_s01_research.py
 ```
+
+## P2-04 / Frozen-parameter S01 walk-forward validation
+
+P2-04 adds bounded 90-day explicit public-history ranges and a chronological
+walk-forward runner. Backfill 1m, 15m and 1h data first, then create a complete
+funding manifest for each exact fold. Run at least two explicit fee/slippage
+scenarios; do not infer the exchange fee tier:
+```bash
+python -m baqs.backtest.walk_forward --symbol BTCUSDT --start-ms <EVAL_START_MS> --end-ms <EVAL_END_MS> --fold-count 3 --minimum-trades-per-fold 5 --cost-scenario base:5:2 --cost-scenario stress:10:10
+```
+Run BTCUSDT and ETHUSDT separately. The report uses frozen S01-0.1 thresholds,
+strict chronological folds and exact funding manifests. `READY` means the
+data and minimum sample gates passed; it is not a profitability or robustness
+claim. The report explicitly marks market-regime coverage NOT_EVALUATED and
+robustness assessment NOT_MADE.
+See `docs/P2-04_WALK_FORWARD_VALIDATION.md` for the 90-day window layout,
+per-fold funding preparation and aggregation limitations.

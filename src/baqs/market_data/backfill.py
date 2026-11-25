@@ -13,7 +13,7 @@ import httpx
 
 from baqs.db import make_engine
 from baqs.logging_config import configure_logging
-from baqs.market_data.history import DEFAULT_BARS, PublicHistoryBackfill
+from baqs.market_data.history import DEFAULT_BARS, MAX_BARS_BY_TIMEFRAME, PublicHistoryBackfill
 from baqs.market_data.repository import CandleStore
 from baqs.market_data.rest import PUBLIC_BASE_URL, PublicFuturesREST
 from baqs.market_data.schema import SYMBOLS
@@ -40,7 +40,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--bars",
         type=int,
-        help="Default 43200 for 1m, 2920 for 15m, 120 for 1h; max 50000",
+        help=(
+            f"Defaults: 43200 (1m), 2920 (15m), 120 (1h); 90-day caps: "
+            f"1m={MAX_BARS_BY_TIMEFRAME['1m']}, "
+            f"15m={MAX_BARS_BY_TIMEFRAME['15m']}, "
+            f"1h={MAX_BARS_BY_TIMEFRAME['1h']}"
+        ),
+    )
+    parser.add_argument(
+        "--start-ms",
+        type=int,
+        help="Explicit inclusive UTC window start (requires --end-ms; interval-aligned)",
+    )
+    parser.add_argument(
+        "--end-ms",
+        type=int,
+        help="Explicit exclusive UTC window end (requires --start-ms; interval-aligned)",
     )
     parser.add_argument(
         "--chunk-bars",
@@ -68,7 +83,13 @@ async def _run(args: argparse.Namespace) -> None:
                 chunk_bars=args.chunk_bars,
             )
             for symbol in args.symbols:
-                report = await service.run(symbol, args.timeframe, bars=args.bars)
+                report = await service.run(
+                    symbol,
+                    args.timeframe,
+                    bars=args.bars,
+                    start_ms=args.start_ms,
+                    end_ms=args.end_ms,
+                )
                 print(json.dumps(asdict(report), sort_keys=True))
                 logger.info("Public history verified for %s %s", symbol, args.timeframe)
     finally:

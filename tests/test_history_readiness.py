@@ -17,6 +17,27 @@ from baqs.settings import Settings
 STEP = 3_600_000
 
 
+def test_backtest_readiness_accepts_the_full_bounded_90_day_window(db_engine: Engine) -> None:
+    end_ms = 129_600 * 60_000
+    app = create_app(
+        settings=Settings(_env_file=None, database_url="sqlite:///:memory:"),
+        engine=db_engine,
+    )
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/market/backtest-readiness",
+            params={"start_ms": 0, "end_ms": end_ms},
+        )
+        too_long = client.get(
+            "/api/v1/market/backtest-readiness",
+            params={"start_ms": 0, "end_ms": end_ms + 60_000},
+        )
+    assert response.status_code == 200
+    assert response.json()["symbols"]["BTCUSDT"]["execution_1m"]["required_bars"] == 129_600
+    assert response.json()["symbols"]["ETHUSDT"]["status"] == "UNAVAILABLE"
+    assert too_long.status_code == 422
+
+
 def closed(index: int) -> FinalCandle:
     return FinalCandle(
         "BTCUSDT",
@@ -296,3 +317,24 @@ def test_untrusted_source_invalidates_readiness(db_engine: Engine) -> None:
     report = store.history_readiness("BTCUSDT", "1h", 4 * STEP, required_bars=3)
     assert report["status"] == "GAP"
     assert report["invalid_metadata_count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("timeframe", "step", "maximum"),
+    [
+        ("1m", 60_000, 129_600),
+        ("5m", 300_000, 25_920),
+        ("15m", 900_000, 8_640),
+        ("1h", 3_600_000, 2_160),
+    ],
+)
+def test_history_readiness_enforces_per_timeframe_90_day_cap(
+    db_engine: Engine, timeframe: str, step: int, maximum: int
+) -> None:
+    with pytest.raises(ValueError, match=f"1..{maximum}"):
+        CandleStore(db_engine).history_readiness(
+            "BTCUSDT",
+            timeframe,
+            (maximum + 1) * step,
+            required_bars=maximum + 1,
+        )

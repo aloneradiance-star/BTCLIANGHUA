@@ -14,7 +14,11 @@ from sqlalchemy.orm import Session
 from baqs.db import make_engine
 from baqs.logging_config import configure_logging
 from baqs.market_data.funding import FundingStore
-from baqs.market_data.repository import CandleStore, MarketStreamStore
+from baqs.market_data.repository import (
+    MAX_HISTORY_BARS_BY_TIMEFRAME,
+    CandleStore,
+    MarketStreamStore,
+)
 from baqs.market_data.schema import INTERVAL_MS
 from baqs.models import Candle, RegimeSnapshot
 from baqs.regime.service import RegimeResearchService
@@ -133,20 +137,17 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
         end_ms: int = Query(..., gt=0),
     ) -> dict[str, object]:
         """Read-only gate for exact 1m execution and funding-history coverage."""
-        if (
-            start_ms % 60_000
-            or end_ms % 60_000
-            or end_ms <= start_ms
-            or (end_ms - start_ms) // 60_000 > 50_000
-        ):
+        step = INTERVAL_MS["1m"]
+        maximum_bars = MAX_HISTORY_BARS_BY_TIMEFRAME["1m"]
+        required_bars = (end_ms - start_ms) // step
+        if start_ms % step or end_ms % step or not 1 <= required_bars <= maximum_bars:
             raise HTTPException(
                 status_code=422,
-                detail="Backtest window must be 1m-aligned and contain 1..50000 bars",
+                detail=f"Backtest window must be 1m-aligned and contain 1..{maximum_bars} bars",
             )
         engine = _engine(request)
         candles_store = CandleStore(engine)
         funding_store = FundingStore(engine)
-        required_bars = (end_ms - start_ms) // 60_000
         symbols: dict[str, object] = {}
         for symbol in SYMBOLS:
             execution = candles_store.history_readiness(
