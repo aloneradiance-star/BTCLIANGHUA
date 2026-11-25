@@ -3,10 +3,12 @@
 import asyncio
 from decimal import Decimal
 
+import httpx
 import pytest
 from sqlalchemy import Engine
 
 from baqs.market_data.repository import CandleStore
+from baqs.market_data.rest import PublicFuturesREST
 from baqs.market_data.schema import CandleGap, FinalCandle
 from baqs.market_data.service import PublicMarketDataService
 
@@ -97,6 +99,32 @@ def test_failed_repair_does_not_persist_later_ws_candle(db_engine: Engine) -> No
         )
         with pytest.raises(CandleGap):
             await service.ingest(bar(4, source="WS"))
+        assert store.latest_open_ms("BTCUSDT", "1m") == STEP
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("server_bar", [2, 3], ids=["empty_repair", "partial_repair"])
+def test_rest_clock_must_cover_the_entire_gap(db_engine: Engine, server_bar: int) -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/fapi/v1/time":
+            return httpx.Response(200, json={"serverTime": server_bar * STEP})
+        assert request.url.path == "/fapi/v1/klines"
+        assert request.url.params["startTime"] == str(2 * STEP)
+        assert request.url.params["endTime"] == str(3 * STEP - 1)
+        return httpx.Response(
+            200, json=[[2 * STEP, "100", "103", "99", "101", "5", 3 * STEP - 1, "500", 10]]
+        )
+
+    async def run() -> None:
+        store = CandleStore(db_engine)
+        store.upsert(bar(1))
+        async with httpx.AsyncClient(
+            base_url="https://fapi.binance.com", transport=httpx.MockTransport(respond)
+        ) as client:
+            service = PublicMarketDataService(PublicFuturesREST(client), store)
+            with pytest.raises(CandleGap, match="repair did not cover the full interval"):
+                await service.ingest(bar(4, source="WS"))
         assert store.latest_open_ms("BTCUSDT", "1m") == STEP
 
     asyncio.run(run())
