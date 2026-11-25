@@ -142,7 +142,7 @@ python -m baqs.backtest.walk_forward --symbol BTCUSDT --start-ms <EVAL_START_MS>
 Run BTCUSDT and ETHUSDT separately. The report uses frozen S01-0.1 thresholds,
 strict chronological folds and exact funding manifests. `READY` means the
 data and minimum sample gates passed; it is not a profitability or robustness
-claim. The report explicitly marks market-regime coverage NOT_EVALUATED and
-robustness assessment NOT_MADE.
+claim. The report includes per-fold counts from the six-state candidate rules
+and marks the robustness assessment NOT_MADE.
 See `docs/P2-04_WALK_FORWARD_VALIDATION.md` for the 90-day window layout,
 per-fold funding preparation and aggregation limitations.

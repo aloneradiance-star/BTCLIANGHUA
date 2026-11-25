@@ -19,6 +19,7 @@ from baqs.market_data.funding import FundingStore
 from baqs.market_data.repository import CandleStore
 from baqs.market_data.schema import FinalCandle, FundingRateRecord
 from baqs.models import Candle, FundingCoverageRecord, FundingRate
+from baqs.regime.rules import RegimeUnavailable
 from baqs.strategies.s01 import S01TrendPullbackStrategy
 
 MINUTE = 60_000
@@ -202,12 +203,19 @@ def test_walk_forward_cost_sensitivity_is_deterministic_and_read_only(
         assert not caller_context.flags[Inexact]
 
     assert first.status == "READY"
-    assert first.market_regime_coverage == "NOT_EVALUATED"
+    assert first.market_regime_coverage == "EVALUATED"
+    assert set(first.regime_candidates_by_fold) == {1, 2, 3}
+    for coverage in first.regime_candidates_by_fold.values():
+        assert coverage.expected_intervals == 96
+        assert coverage.unavailable_intervals == 0
+        assert sum(coverage.counts_by_regime.values()) == 96
+        assert "HIGH_RISK" in coverage.missing_regimes
     assert first.robustness_assessment == "NOT_MADE"
     assert len(first.cells) == 6
     assert first.aggregate_by_scenario["low"]["trade_counts_by_fold"] == [1, 1, 1]
     assert first.aggregate_by_scenario["stress"]["trade_counts_by_fold"] == [1, 1, 1]
     for cell in first.cells:
+        assert "market_regime_candidates" not in cell.report.data_provenance
         result = cell.report.result
         assert result is not None
         assert result.trades[0].entry_time_ms == START + (cell.fold_index - 1) * DAY
@@ -227,6 +235,7 @@ def test_walk_forward_cost_sensitivity_is_deterministic_and_read_only(
             assert result.skipped_signals[0].signal_time_ms == END
             assert result.skipped_signals[0].reason == "NO_NEXT_1M_EXECUTION_BAR"
     for scenario, aggregate in first.aggregate_by_scenario.items():
+        assert aggregate["market_regime_coverage"] == "EVALUATED"
         fold_results = [
             cell.report.result
             for cell in first.cells
@@ -252,7 +261,11 @@ def test_walk_forward_refuses_to_call_too_few_trades_robust(
     def no_signals(self, bars15, bars1h):
         return []
 
+    def unavailable(*_args):
+        raise RegimeUnavailable("VOLUME_WARMUP")
+
     monkeypatch.setattr(S01TrendPullbackStrategy, "generate_signals", no_signals)
+    monkeypatch.setattr("baqs.backtest.regime_coverage.classify_candidate", unavailable)
     report = WalkForwardResearchService(
         db_engine,
         cost_scenarios=[
@@ -265,6 +278,11 @@ def test_walk_forward_refuses_to_call_too_few_trades_robust(
     assert report.status == "INSUFFICIENT_SAMPLE"
     assert report.reason == "MINIMUM_TRADES_PER_FOLD_NOT_MET"
     assert report.aggregate_by_scenario["base"]["trade_count"] == 0
+    assert report.market_regime_coverage == "UNAVAILABLE"
+    assert all(
+        coverage.unavailable_intervals == 96
+        for coverage in report.regime_candidates_by_fold.values()
+    )
 
 
 def test_walk_forward_fails_closed_without_each_fold_funding_manifest(

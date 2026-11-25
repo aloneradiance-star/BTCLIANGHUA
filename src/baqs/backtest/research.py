@@ -33,6 +33,7 @@ from baqs.backtest.engine import (
     FundingCoverage,
     FundingEvent,
 )
+from baqs.backtest.regime_coverage import measure_regime_candidates
 from baqs.db import make_engine
 from baqs.market_data.funding import FundingStore
 from baqs.market_data.repository import CandleStore
@@ -441,6 +442,7 @@ class S01ResearchService:
         end_ms: int,
         *,
         include_terminal_signal: bool = True,
+        include_regime_candidates: bool = False,
     ) -> S01ResearchReport:
         """Replay one sample; omit the terminal signal when a following fold owns it."""
         if (
@@ -470,6 +472,13 @@ class S01ResearchService:
                     self.costs,
                     self.config,
                 )
+                if include_regime_candidates:
+                    inputs.provenance["market_regime_candidates"] = measure_regime_candidates(
+                        inputs.signal_bars_15m,
+                        inputs.context_bars_1h,
+                        start_ms,
+                        end_ms,
+                    )
         except (BacktestUnavailable, CandleGap, FundingGap, InvalidCandle, ValueError) as exc:
             return S01ResearchReport(
                 status="UNAVAILABLE",

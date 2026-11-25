@@ -3,13 +3,14 @@
 import argparse
 import json
 from collections import Counter
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any, Literal, cast
 
 from sqlalchemy.engine import Engine
 
 from baqs.backtest.engine import BacktestConfig, CostModel
+from baqs.backtest.regime_coverage import RegimeCandidateCoverage
 from baqs.backtest.research import (
     MAX_EXECUTION_BARS,
     REPLAY_DECIMAL_CONTEXT,
@@ -75,6 +76,7 @@ class WalkForwardReport:
     reason: str | None
     market_regime_coverage: str = "NOT_EVALUATED"
     robustness_assessment: str = "NOT_MADE"
+    regime_candidates_by_fold: dict[int, RegimeCandidateCoverage] = field(default_factory=dict)
 
 
 def fold_windows(start_ms: int, end_ms: int, fold_count: int) -> tuple[FoldWindow, ...]:
@@ -133,6 +135,7 @@ def _aggregate_scenario(
     folds: tuple[FoldWindow, ...],
     cells: list[WalkForwardCell],
     minimum_trades_per_fold: int,
+    market_regime_coverage: str,
 ) -> dict[str, object]:
     reports = [cell.report for cell in cells if cell.cost_scenario == scenario.name]
     results = [report.result for report in reports]
@@ -189,7 +192,7 @@ def _aggregate_scenario(
         "minimum_trades_per_fold": minimum_trades_per_fold,
         "sufficient_sample": all(count >= minimum_trades_per_fold for count in trade_counts),
         "aggregation_basis": "summed independent fold PnL; not a compounded portfolio return",
-        "market_regime_coverage": "NOT_EVALUATED",
+        "market_regime_coverage": market_regime_coverage,
         "robustness_assessment": "NOT_MADE",
     }
 
@@ -226,12 +229,13 @@ class WalkForwardResearchService:
             raise ValueError("Only BTCUSDT and ETHUSDT are supported")
         folds = fold_windows(start_ms, end_ms, self.fold_count)
         cells: list[WalkForwardCell] = []
+        regime_candidates_by_fold: dict[int, RegimeCandidateCoverage] = {}
         strategy_parameters: dict[str, str] = {}
         strategy_config = S01Config()
         strategy_version = strategy_config.strategy_version
 
         for fold in folds:
-            for scenario in self.cost_scenarios:
+            for scenario_index, scenario in enumerate(self.cost_scenarios):
                 report = S01ResearchService(
                     self.engine,
                     costs=CostModel(scenario.taker_fee_bps, scenario.slippage_bps),
@@ -242,7 +246,14 @@ class WalkForwardResearchService:
                     fold.start_ms,
                     fold.end_ms,
                     include_terminal_signal=fold == folds[-1],
+                    include_regime_candidates=scenario_index == 0,
                 )
+                if scenario_index == 0 and report.status == "READY":
+                    provenance = dict(report.data_provenance)
+                    coverage = provenance.pop("market_regime_candidates")
+                    assert isinstance(coverage, RegimeCandidateCoverage)
+                    regime_candidates_by_fold[fold.index] = coverage
+                    report = replace(report, data_provenance=provenance)
                 cells.append(WalkForwardCell(fold.index, scenario.name, report))
                 if report.status != "READY":
                     return WalkForwardReport(
@@ -270,6 +281,17 @@ class WalkForwardResearchService:
                     strategy_parameters = report.strategy_parameters
                     strategy_version = report.strategy_version
 
+        unavailable_intervals = sum(
+            coverage.unavailable_intervals for coverage in regime_candidates_by_fold.values()
+        )
+        expected_intervals = sum(
+            coverage.expected_intervals for coverage in regime_candidates_by_fold.values()
+        )
+        market_regime_coverage = "EVALUATED"
+        if unavailable_intervals == expected_intervals:
+            market_regime_coverage = "UNAVAILABLE"
+        elif unavailable_intervals:
+            market_regime_coverage = "PARTIAL"
         with localcontext(REPLAY_DECIMAL_CONTEXT):
             aggregates = {
                 scenario.name: _aggregate_scenario(
@@ -277,6 +299,7 @@ class WalkForwardResearchService:
                     folds,
                     cells,
                     self.minimum_trades_per_fold,
+                    market_regime_coverage,
                 )
                 for scenario in self.cost_scenarios
             }
@@ -301,6 +324,8 @@ class WalkForwardResearchService:
             cells=tuple(cells),
             aggregate_by_scenario=aggregates,
             reason=None if sufficient else "MINIMUM_TRADES_PER_FOLD_NOT_MET",
+            market_regime_coverage=market_regime_coverage,
+            regime_candidates_by_fold=regime_candidates_by_fold,
         )
 
 
