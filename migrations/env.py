@@ -5,8 +5,8 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from baqs import models  # noqa: F401 - register metadata
 from baqs.db import Base
-from baqs.models import Candle, RegimeSnapshot  # noqa: F401 - register metadata
 from baqs.settings import get_settings
 
 config = context.config

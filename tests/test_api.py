@@ -3,11 +3,14 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from baqs.api import create_app
+from baqs.market_data.repository import CandleStore, MarketStreamStore
+from baqs.market_data.schema import INTERVAL_MS, SYMBOLS, FinalCandle
 from baqs.models import Candle, RegimeSnapshot
 from baqs.settings import Settings
 
@@ -23,10 +26,75 @@ def client_for(engine: Engine) -> TestClient:
 
 def test_health_reports_no_execution(db_engine: Engine) -> None:
     client = client_for(db_engine)
-    data = client.get("/api/v1/health").json()
+    response = client.get("/api/v1/health")
+    data = response.json()
+    assert response.status_code == 503
     assert data["database"] == "CONNECTED"
     assert data["execution_enabled"] is False
-    assert data["market_data"] == "NOT_IMPLEMENTED"
+    assert data["market_data"] == "UNAVAILABLE"
+
+
+@pytest.mark.parametrize("future_btc_candle", [False, True], ids=["current", "future"])
+def test_market_readiness_requires_fresh_candles_and_connected_collector(
+    db_engine: Engine, future_btc_candle: bool
+) -> None:
+    now_ms = int(datetime.now(UTC).timestamp() * 1000)
+    client = client_for(db_engine)
+    collector = MarketStreamStore(db_engine)
+    collector.record_message(now_ms)
+    assert client.get("/api/v1/health").status_code == 503
+
+    store = CandleStore(db_engine)
+    price = Decimal(100)
+    for symbol in SYMBOLS:
+        for timeframe, step in INTERVAL_MS.items():
+            close_ms = now_ms // step * step
+            if future_btc_candle and (symbol, timeframe) == ("BTCUSDT", "1m"):
+                close_ms += 31 * step
+            store.upsert(
+                FinalCandle(
+                    symbol,
+                    timeframe,
+                    close_ms - step,
+                    close_ms,
+                    price,
+                    price,
+                    price,
+                    price,
+                    Decimal(1),
+                    price,
+                    1,
+                    "REST",
+                )
+            )
+
+    for last_message, status, expected_http in (
+        (now_ms - 60_000, "STALE", 503),
+        (now_ms + 60_000, "STALE", 503),
+        (None, "DISCONNECTED", 503),
+        (now_ms, "CONNECTED", 503 if future_btc_candle else 200),
+    ):
+        collector.record_message(last_message)
+        response = client.get("/api/v1/health")
+        assert response.status_code == expected_http
+        assert response.json()["execution_enabled"] is False
+        details = client.get("/api/v1/market/health").json()
+        assert details["collector"] == {"status": status, "last_message_ms": last_message}
+        expected_feed_status = "STALE" if future_btc_candle else "READY"
+        assert details["feeds"]["BTCUSDT"]["1m"]["status"] == expected_feed_status
+
+    persisted = client.get("/api/v1/market/candles?symbol=BTCUSDT&timeframe=1m").json()
+    assert len(persisted["items"]) == (0 if future_btc_candle else 1)
+
+
+def test_market_health_no_data_does_not_claim_ready(db_engine: Engine) -> None:
+    response = client_for(db_engine).get("/api/v1/market/health")
+    assert response.status_code == 200
+    assert response.json()["collector"] == {"status": "NOT_STARTED", "last_message_ms": None}
+    feeds = response.json()["feeds"]
+    assert feeds["BTCUSDT"]["1m"]["status"] == "NO_DATA"
+    assert feeds["ETHUSDT"]["1h"]["status"] == "NO_DATA"
+    assert response.json()["execution_enabled"] is False
 
 
 def test_absent_regimes_unavailable(db_engine: Engine) -> None:

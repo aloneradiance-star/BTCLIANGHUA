@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 
 from baqs.db import make_engine
 from baqs.logging_config import configure_logging
+from baqs.market_data.repository import CandleStore, MarketStreamStore
+from baqs.market_data.schema import INTERVAL_MS
 from baqs.models import Candle, RegimeSnapshot
 from baqs.settings import Settings, get_settings
 
@@ -50,22 +52,51 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
 
     @app.get("/api/v1/health")
     def health(request: Request, response: Response) -> dict[str, object]:
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
         try:
-            with _engine(request).connect() as conn:
+            database = _engine(request)
+            with database.connect() as conn:
                 conn.execute(select(Candle).limit(0))
                 conn.execute(select(RegimeSnapshot).limit(0))
+            store = CandleStore(database)
+            candles_ready = all(
+                store.health(symbol, timeframe, now_ms)["status"] == "READY"
+                for symbol in SYMBOLS
+                for timeframe in TIMEFRAMES
+            )
+            ready = MarketStreamStore(database).health()["status"] == "CONNECTED" and candles_ready
         except (SQLAlchemyError, ImportError, OSError):
             response.status_code = 503
             return {
                 "status": "DEGRADED",
                 "database": "UNAVAILABLE",
-                "market_data": "NOT_IMPLEMENTED",
+                "market_data": "UNAVAILABLE",
                 "execution_enabled": False,
             }
+        if not ready:
+            response.status_code = 503
         return {
-            "status": "FOUNDATION_READY",
+            "status": "DATA_READY" if ready else "DEGRADED",
             "database": "CONNECTED",
-            "market_data": "NOT_IMPLEMENTED",
+            "market_data": "READY" if ready else "UNAVAILABLE",
+            "execution_enabled": False,
+        }
+
+    @app.get("/api/v1/market/health")
+    def market_health(request: Request) -> dict[str, object]:
+        observed_at = datetime.now(UTC)
+        now_ms = int(observed_at.timestamp() * 1000)
+        database = _engine(request)
+        store = CandleStore(database)
+        return {
+            "observed_at": observed_at.isoformat(),
+            "collector": MarketStreamStore(database).health(),
+            "feeds": {
+                symbol: {
+                    timeframe: store.health(symbol, timeframe, now_ms) for timeframe in INTERVAL_MS
+                }
+                for symbol in SYMBOLS
+            },
             "execution_enabled": False,
         }
 
@@ -85,6 +116,7 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
                     Candle.symbol == symbol,
                     Candle.timeframe == timeframe,
                     Candle.is_final.is_(True),
+                    Candle.close_time <= datetime.now(UTC),
                 )
                 .order_by(Candle.open_time.desc())
                 .limit(limit)
