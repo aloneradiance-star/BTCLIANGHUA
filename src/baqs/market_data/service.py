@@ -33,6 +33,8 @@ class PublicMarketDataService:
         server_time = await self.rest.server_time_ms()
         upper = (server_time // step) * step
         latest = self.store.latest_open_ms(symbol, timeframe)
+        if latest is not None and latest >= upper:
+            raise CandleGap(f"{symbol}/{timeframe} finalized candle after Binance server time")
         start = max(
             0,
             upper - self.initial_bars * step
