@@ -20,6 +20,7 @@ from baqs.models import FundingCoverageRecord, FundingRate
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _MILLISECOND = timedelta(milliseconds=1)
+_DIRECT_SOURCE = "BINANCE_PUBLIC_FAPI_FUNDING_RATE"
 
 
 def _datetime(timestamp_ms: int) -> datetime:
@@ -36,6 +37,13 @@ def _fingerprint(record: FundingRateRecord) -> str:
     return sha256("|".join(map(str, record.fingerprint())).encode("utf-8")).hexdigest()
 
 
+def _window_source(records: Sequence[FundingRateRecord]) -> str:
+    sources = {record.source for record in records}
+    if len(sources) > 1:
+        return "MIXED_PUBLIC_FUNDING_SOURCES"
+    return next(iter(sources), _DIRECT_SOURCE)
+
+
 @dataclass(frozen=True, slots=True)
 class FundingWindowSnapshot:
     symbol: str
@@ -45,6 +53,7 @@ class FundingWindowSnapshot:
     expected_timestamps_ms: tuple[int, ...]
     expected_event_fingerprints: tuple[str, ...]
     complete: bool
+    source: str
 
 
 class FundingStore:
@@ -145,6 +154,7 @@ class FundingStore:
         start, end = _datetime(start_ms), _datetime(end_ms)
         expected_times = [record.funding_time_ms for record in ordered]
         expected_fingerprints = [_fingerprint(record) for record in ordered]
+        source = _window_source(ordered)
         with Session(self.engine) as session:
             rows = session.scalars(
                 select(FundingRate)
@@ -173,7 +183,7 @@ class FundingStore:
                 coverage.expected_event_fingerprints = expected_fingerprints
                 coverage.event_count = len(ordered)
                 coverage.complete = True
-                coverage.source = "BINANCE_PUBLIC_FAPI_FUNDING_RATE"
+                coverage.source = source
             else:
                 session.add(
                     FundingCoverageRecord(
@@ -184,7 +194,7 @@ class FundingStore:
                         expected_event_fingerprints=expected_fingerprints,
                         event_count=len(ordered),
                         complete=True,
-                        source="BINANCE_PUBLIC_FAPI_FUNDING_RATE",
+                        source=source,
                     )
                 )
             session.commit()
@@ -257,7 +267,7 @@ class FundingStore:
                 "event_count": len(rows),
                 "off_minute_event_count": off_minute_count,
                 "expected_timestamps_ms": actual_times,
-                "source": coverage.source,
+                "source": _window_source(stored),
             }
 
     def load_window(self, symbol: str, start_ms: int, end_ms: int) -> FundingWindowSnapshot:
@@ -293,4 +303,5 @@ class FundingStore:
                 expected_timestamps_ms=times,
                 expected_event_fingerprints=fingerprints,
                 complete=True,
+                source=_window_source(records),
             )

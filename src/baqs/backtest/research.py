@@ -408,7 +408,7 @@ class S01ResearchService:
                 "complete_manifest": funding_snapshot.complete,
                 "event_count": len(funding_events),
                 "expected_timestamps_ms": list(funding_snapshot.expected_timestamps_ms),
-                "source": "BINANCE_PUBLIC_FAPI_FUNDING_RATE",
+                "source": funding_snapshot.source,
                 "fingerprints_sha256": funding_digest,
             },
         }

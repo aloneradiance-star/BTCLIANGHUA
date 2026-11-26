@@ -98,7 +98,9 @@ stdout. A valid run has `status=READY`; incomplete data has
 - Skipped signals, minute-close equity curve and performance metrics.
 - Exact execution window, 15m/1h warm-up boundaries, row counts, source counts
   and SHA-256 dataset fingerprints.
-- Funding manifest timestamps, event count and fingerprint digest.
+- Funding manifest timestamps, event count, fingerprint digest and verified
+  event source. A manifest containing multiple sources is labelled
+  `MIXED_PUBLIC_FUNDING_SOURCES`.
 - Strategy version and every active S01 threshold, explicit cost/risk assumptions
   and model limitations.
 
