@@ -29,8 +29,9 @@ For a requested 15m-aligned half-open UTC window `[start_ms, end_ms)`:
 - Load the exact funding `[start_ms, end_ms)` manifest using the stored source
   fingerprints. Missing, incomplete, tampered or conflicting manifests return
   `UNAVAILABLE`. Regular and Special events at one timestamp remain separate.
-  A verified manifest with between-minute settlements returns
-  `UNAVAILABLE` with reason `OFF_MINUTE_EVENTS`.
+  Between-minute settlements retain their source timestamp. A settlement that
+  shares a minute with an exit of unknown timing returns `UNAVAILABLE` with
+  `AMBIGUOUS_INTRAMINUTE_FUNDING` and the original event timestamp.
 - Signals are generated from closed 15m candles. The P2-01 engine can enter only
   at the next 1m open; the final exclusive boundary cannot create a fill.
 
@@ -97,7 +98,9 @@ stdout. A valid run has `status=READY`; incomplete data has
 - Skipped signals, minute-close equity curve and performance metrics.
 - Exact execution window, 15m/1h warm-up boundaries, row counts, source counts
   and SHA-256 dataset fingerprints.
-- Funding manifest timestamps, event count and fingerprint digest.
+- Funding manifest timestamps, event count, fingerprint digest and verified
+  event source. A manifest containing multiple sources is labelled
+  `MIXED_PUBLIC_FUNDING_SOURCES`.
 - Strategy version and every active S01 threshold, explicit cost/risk assumptions
   and model limitations.
 

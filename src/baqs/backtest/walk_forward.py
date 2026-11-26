@@ -2,21 +2,26 @@
 
 import argparse
 import json
-from dataclasses import asdict, dataclass, is_dataclass
-from decimal import Decimal, InvalidOperation
+from collections import Counter
+from dataclasses import asdict, dataclass, field, is_dataclass, replace
+from decimal import Decimal, InvalidOperation, localcontext
+from pathlib import Path
 from typing import Any, Literal, cast
 
 from sqlalchemy.engine import Engine
 
 from baqs.backtest.engine import BacktestConfig, CostModel
+from baqs.backtest.regime_coverage import RegimeCandidateCoverage
 from baqs.backtest.research import (
     MAX_EXECUTION_BARS,
+    REPLAY_DECIMAL_CONTEXT,
     WARMUP_15M_BARS,
     S01ResearchReport,
     S01ResearchService,
 )
 from baqs.db import make_engine
 from baqs.market_data.schema import INTERVAL_MS, SYMBOLS
+from baqs.market_data.trade_archive import TradeArchive, TradeArchiveError
 from baqs.settings import get_settings
 from baqs.strategies.s01 import S01Config
 
@@ -73,6 +78,7 @@ class WalkForwardReport:
     reason: str | None
     market_regime_coverage: str = "NOT_EVALUATED"
     robustness_assessment: str = "NOT_MADE"
+    regime_candidates_by_fold: dict[int, RegimeCandidateCoverage] = field(default_factory=dict)
 
 
 def fold_windows(start_ms: int, end_ms: int, fold_count: int) -> tuple[FoldWindow, ...]:
@@ -131,6 +137,7 @@ def _aggregate_scenario(
     folds: tuple[FoldWindow, ...],
     cells: list[WalkForwardCell],
     minimum_trades_per_fold: int,
+    market_regime_coverage: str,
 ) -> dict[str, object]:
     reports = [cell.report for cell in cells if cell.cost_scenario == scenario.name]
     results = [report.result for report in reports]
@@ -138,16 +145,20 @@ def _aggregate_scenario(
         raise ValueError("Cannot aggregate incomplete walk-forward scenario results")
     completed = [result for result in results if result is not None]
     trades = [trade for result in completed for trade in result.trades]
+    skipped_counts = [len(result.skipped_signals) for result in completed]
+    skipped_by_reason = Counter(
+        signal.reason for result in completed for signal in result.skipped_signals
+    )
     trade_count = len(trades)
     wins = sum(trade.net_pnl > ZERO for trade in trades)
     positive_pnl = sum((trade.net_pnl for trade in trades if trade.net_pnl > ZERO), ZERO)
     negative_pnl = abs(sum((trade.net_pnl for trade in trades if trade.net_pnl < ZERO), ZERO))
-    gross_pnl = sum((trade.gross_pnl for trade in trades), ZERO)
-    net_pnl = sum((trade.net_pnl for trade in trades), ZERO)
-    fees = sum((trade.fees for trade in trades), ZERO)
-    funding = sum((trade.funding_cost for trade in trades), ZERO)
-    slippage = sum((trade.slippage_cost for trade in trades), ZERO)
     metrics = [result.metrics for result in completed]
+    gross_pnl = sum((metric.gross_pnl for metric in metrics), ZERO)
+    net_pnl = sum((metric.net_pnl for metric in metrics), ZERO)
+    fees = sum((metric.total_fees for metric in metrics), ZERO)
+    funding = sum((metric.total_funding_cost for metric in metrics), ZERO)
+    slippage = sum((metric.total_slippage_cost for metric in metrics), ZERO)
     durations = [fold.end_ms - fold.start_ms for fold in folds]
     total_duration = sum(durations)
     exposure = sum(
@@ -167,6 +178,9 @@ def _aggregate_scenario(
         "fold_count": len(folds),
         "trade_counts_by_fold": trade_counts,
         "trade_count": trade_count,
+        "skipped_signal_count": sum(skipped_counts),
+        "skipped_signal_counts_by_fold": skipped_counts,
+        "skipped_signal_counts_by_reason": dict(sorted(skipped_by_reason.items())),
         "gross_pnl": gross_pnl,
         "net_pnl": net_pnl,
         "total_fees": fees,
@@ -180,7 +194,7 @@ def _aggregate_scenario(
         "minimum_trades_per_fold": minimum_trades_per_fold,
         "sufficient_sample": all(count >= minimum_trades_per_fold for count in trade_counts),
         "aggregation_basis": "summed independent fold PnL; not a compounded portfolio return",
-        "market_regime_coverage": "NOT_EVALUATED",
+        "market_regime_coverage": market_regime_coverage,
         "robustness_assessment": "NOT_MADE",
     }
 
@@ -196,10 +210,13 @@ class WalkForwardResearchService:
         fold_count: int = 3,
         minimum_trades_per_fold: int = 5,
         config: BacktestConfig | None = None,
+        trade_archive: TradeArchive | None = None,
     ) -> None:
         scenarios = tuple(cost_scenarios)
         if len(scenarios) < 2 or len({scenario.name for scenario in scenarios}) != len(scenarios):
             raise ValueError("At least two uniquely named cost scenarios are required")
+        if len({(scenario.taker_fee_bps, scenario.slippage_bps) for scenario in scenarios}) < 2:
+            raise ValueError("At least two distinct fee and slippage combinations are required")
         if type(fold_count) is not int or not 3 <= fold_count <= 12:
             raise ValueError("Walk-forward fold_count must be 3..12")
         if type(minimum_trades_per_fold) is not int or not 1 <= minimum_trades_per_fold <= 1000:
@@ -209,24 +226,39 @@ class WalkForwardResearchService:
         self.fold_count = fold_count
         self.minimum_trades_per_fold = minimum_trades_per_fold
         self.config = config if config is not None else BacktestConfig()
+        self.trade_archive = trade_archive
 
     def run(self, symbol: str, start_ms: int, end_ms: int) -> WalkForwardReport:
         if symbol not in SYMBOLS:
             raise ValueError("Only BTCUSDT and ETHUSDT are supported")
         folds = fold_windows(start_ms, end_ms, self.fold_count)
         cells: list[WalkForwardCell] = []
+        regime_candidates_by_fold: dict[int, RegimeCandidateCoverage] = {}
         strategy_parameters: dict[str, str] = {}
         strategy_config = S01Config()
         strategy_version = strategy_config.strategy_version
 
         for fold in folds:
-            for scenario in self.cost_scenarios:
+            for scenario_index, scenario in enumerate(self.cost_scenarios):
                 report = S01ResearchService(
                     self.engine,
                     costs=CostModel(scenario.taker_fee_bps, scenario.slippage_bps),
                     config=self.config,
                     strategy_config=strategy_config,
-                ).run(symbol, fold.start_ms, fold.end_ms)
+                    trade_archive=self.trade_archive,
+                ).run(
+                    symbol,
+                    fold.start_ms,
+                    fold.end_ms,
+                    include_terminal_signal=fold == folds[-1],
+                    include_regime_candidates=scenario_index == 0,
+                )
+                if scenario_index == 0 and report.status == "READY":
+                    provenance = dict(report.data_provenance)
+                    coverage = provenance.pop("market_regime_candidates")
+                    assert isinstance(coverage, RegimeCandidateCoverage)
+                    regime_candidates_by_fold[fold.index] = coverage
+                    report = replace(report, data_provenance=provenance)
                 cells.append(WalkForwardCell(fold.index, scenario.name, report))
                 if report.status != "READY":
                     return WalkForwardReport(
@@ -254,15 +286,28 @@ class WalkForwardResearchService:
                     strategy_parameters = report.strategy_parameters
                     strategy_version = report.strategy_version
 
-        aggregates = {
-            scenario.name: _aggregate_scenario(
-                scenario,
-                folds,
-                cells,
-                self.minimum_trades_per_fold,
-            )
-            for scenario in self.cost_scenarios
-        }
+        unavailable_intervals = sum(
+            coverage.unavailable_intervals for coverage in regime_candidates_by_fold.values()
+        )
+        expected_intervals = sum(
+            coverage.expected_intervals for coverage in regime_candidates_by_fold.values()
+        )
+        market_regime_coverage = "EVALUATED"
+        if unavailable_intervals == expected_intervals:
+            market_regime_coverage = "UNAVAILABLE"
+        elif unavailable_intervals:
+            market_regime_coverage = "PARTIAL"
+        with localcontext(REPLAY_DECIMAL_CONTEXT):
+            aggregates = {
+                scenario.name: _aggregate_scenario(
+                    scenario,
+                    folds,
+                    cells,
+                    self.minimum_trades_per_fold,
+                    market_regime_coverage,
+                )
+                for scenario in self.cost_scenarios
+            }
         sufficient = all(bool(aggregate["sufficient_sample"]) for aggregate in aggregates.values())
         return WalkForwardReport(
             status="READY" if sufficient else "INSUFFICIENT_SAMPLE",
@@ -284,6 +329,8 @@ class WalkForwardResearchService:
             cells=tuple(cells),
             aggregate_by_scenario=aggregates,
             reason=None if sufficient else "MINIMUM_TRADES_PER_FOLD_NOT_MET",
+            market_regime_coverage=market_regime_coverage,
+            regime_candidates_by_fold=regime_candidates_by_fold,
         )
 
 
@@ -315,6 +362,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--initial-equity", type=Decimal, default=Decimal("10000"))
     parser.add_argument("--risk-fraction", type=Decimal, default=Decimal("0.005"))
+    parser.add_argument(
+        "--trade-archive-manifest",
+        type=Path,
+        help="Local manifest of SHA-256-pinned daily trades ZIPs",
+    )
     return parser.parse_args()
 
 
@@ -330,6 +382,14 @@ def main() -> None:
         risk_fraction=args.risk_fraction,
         max_notional_fraction=Decimal(1),
     )
+    try:
+        trade_archive = (
+            TradeArchive.from_manifest(args.trade_archive_manifest)
+            if args.trade_archive_manifest is not None
+            else None
+        )
+    except TradeArchiveError as exc:
+        raise SystemExit(f"INVALID_TRADE_ARCHIVE_MANIFEST: {exc}") from exc
     engine = make_engine(settings)
     try:
         report = WalkForwardResearchService(
@@ -338,6 +398,7 @@ def main() -> None:
             fold_count=args.fold_count,
             minimum_trades_per_fold=args.minimum_trades_per_fold,
             config=config,
+            trade_archive=trade_archive,
         ).run(args.symbol, args.start_ms, args.end_ms)
         print(walk_forward_report_json(report))
         if report.status != "READY":

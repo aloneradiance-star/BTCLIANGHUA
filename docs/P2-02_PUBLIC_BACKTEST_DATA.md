@@ -95,10 +95,9 @@ The lower-level collectors remain available when separate operation is needed:
 - `GET /api/v1/market/backtest-readiness` is read-only and reports both 1m
   candle continuity and exact funding-manifest readiness for BTC/ETH. It never
   enables execution.
-- The archive preserves exact funding timestamps in milliseconds. A verified
-  archive with events between minute boundaries reports `OFF_MINUTE_EVENTS`
-  for backtesting. The current simulator requires minute-aligned events, so
-  preparation and the API withhold backtest readiness for that window.
+- The archive preserves exact funding timestamps in milliseconds. The readiness
+  API reports verified coverage and `off_minute_event_count`. Replay checks
+  whether any intra-minute settlement and exit require finer timing evidence.
 - The verified funding snapshot can be converted to P2-01 engine inputs by
   mapping each record to `FundingEvent(symbol, funding_time_ms, funding_rate,
   mark_price, rate_type)` and using the exact timestamp tuple in

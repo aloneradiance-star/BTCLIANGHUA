@@ -18,6 +18,7 @@ from decimal import (
     localcontext,
 )
 from hashlib import sha256
+from pathlib import Path
 from typing import Any, Literal, cast
 
 from sqlalchemy import select
@@ -33,6 +34,7 @@ from baqs.backtest.engine import (
     FundingCoverage,
     FundingEvent,
 )
+from baqs.backtest.regime_coverage import measure_regime_candidates
 from baqs.db import make_engine
 from baqs.market_data.funding import FundingStore
 from baqs.market_data.repository import CandleStore
@@ -44,6 +46,7 @@ from baqs.market_data.schema import (
     FundingGap,
     InvalidCandle,
 )
+from baqs.market_data.trade_archive import TradeArchive, TradeArchiveError
 from baqs.models import Candle
 from baqs.settings import get_settings
 from baqs.strategies.s01 import S01Config, S01TrendPullbackStrategy
@@ -51,7 +54,7 @@ from baqs.strategies.s01 import S01Config, S01TrendPullbackStrategy
 WARMUP_15M_BARS = 2920
 WARMUP_1H_BARS = 120
 MAX_EXECUTION_BARS = 50_000
-_REPLAY_DECIMAL_CONTEXT = Context(
+REPLAY_DECIMAL_CONTEXT = Context(
     prec=28,
     rounding=ROUND_HALF_EVEN,
     Emin=-999_999,
@@ -251,6 +254,7 @@ class S01ResearchService:
         costs: CostModel,
         config: BacktestConfig | None = None,
         strategy_config: S01Config | None = None,
+        trade_archive: TradeArchive | None = None,
     ) -> None:
         resolved_config = config if config is not None else BacktestConfig()
         resolved_strategy = strategy_config if strategy_config is not None else S01Config()
@@ -262,6 +266,7 @@ class S01ResearchService:
         self.strategy = S01TrendPullbackStrategy(resolved_strategy)
         self.candle_store = CandleStore(engine)
         self.funding_store = FundingStore(engine)
+        self.trade_archive = trade_archive
 
     @property
     def strategy_parameters(self) -> dict[str, str]:
@@ -351,10 +356,6 @@ class S01ResearchService:
         )
 
         funding_snapshot = self.funding_store.load_window(symbol, start_ms, end_ms)
-        if any(
-            timestamp % INTERVAL_MS["1m"] for timestamp in funding_snapshot.expected_timestamps_ms
-        ):
-            raise BacktestUnavailable("OFF_MINUTE_EVENTS")
         funding_events = tuple(
             FundingEvent(
                 symbol=record.symbol,
@@ -411,7 +412,7 @@ class S01ResearchService:
                 "complete_manifest": funding_snapshot.complete,
                 "event_count": len(funding_events),
                 "expected_timestamps_ms": list(funding_snapshot.expected_timestamps_ms),
-                "source": "BINANCE_PUBLIC_FAPI_FUNDING_RATE",
+                "source": funding_snapshot.source,
                 "fingerprints_sha256": funding_digest,
             },
         }
@@ -434,8 +435,16 @@ class S01ResearchService:
             warmup=warmup,
         )
 
-    def run(self, symbol: str, start_ms: int, end_ms: int) -> S01ResearchReport:
-        """Run an exact historical sample; return UNAVAILABLE for any data-quality gap."""
+    def run(
+        self,
+        symbol: str,
+        start_ms: int,
+        end_ms: int,
+        *,
+        include_terminal_signal: bool = True,
+        include_regime_candidates: bool = False,
+    ) -> S01ResearchReport:
+        """Replay one sample; omit the terminal signal when a following fold owns it."""
         if (
             symbol not in SYMBOLS
             or type(start_ms) is not int
@@ -447,12 +456,14 @@ class S01ResearchService:
         ):
             raise ValueError("Research window must be a positive, 15m-aligned UTC interval")
         try:
-            with localcontext(_REPLAY_DECIMAL_CONTEXT):
+            with localcontext(REPLAY_DECIMAL_CONTEXT):
                 inputs = self._load_inputs(symbol, start_ms, end_ms)
                 signals = self.strategy.generate_signals(
                     list(inputs.signal_bars_15m),
                     list(inputs.context_bars_1h),
                 )
+                if not include_terminal_signal:
+                    signals = [signal for signal in signals if signal.signal_time_ms != end_ms]
                 result = BacktestEngine().run(
                     inputs.execution_bars,
                     signals,
@@ -460,7 +471,15 @@ class S01ResearchService:
                     inputs.funding_coverage,
                     self.costs,
                     self.config,
+                    trade_archive=self.trade_archive,
                 )
+                if include_regime_candidates:
+                    inputs.provenance["market_regime_candidates"] = measure_regime_candidates(
+                        inputs.signal_bars_15m,
+                        inputs.context_bars_1h,
+                        start_ms,
+                        end_ms,
+                    )
         except (BacktestUnavailable, CandleGap, FundingGap, InvalidCandle, ValueError) as exc:
             return S01ResearchReport(
                 status="UNAVAILABLE",
@@ -512,6 +531,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--slippage-bps", required=True, type=_decimal_argument)
     parser.add_argument("--initial-equity", type=_decimal_argument, default=Decimal("10000"))
     parser.add_argument("--risk-fraction", type=_decimal_argument, default=Decimal("0.005"))
+    parser.add_argument(
+        "--trade-archive-manifest",
+        type=Path,
+        help="Local manifest of SHA-256-pinned daily trades ZIPs",
+    )
     return parser.parse_args()
 
 
@@ -527,9 +551,19 @@ def main() -> None:
         risk_fraction=args.risk_fraction,
         max_notional_fraction=Decimal(1),
     )
+    try:
+        trade_archive = (
+            TradeArchive.from_manifest(args.trade_archive_manifest)
+            if args.trade_archive_manifest is not None
+            else None
+        )
+    except TradeArchiveError as exc:
+        raise SystemExit(f"INVALID_TRADE_ARCHIVE_MANIFEST: {exc}") from exc
     engine = make_engine(settings)
     try:
-        report = S01ResearchService(engine, costs=costs, config=config).run(
+        report = S01ResearchService(
+            engine, costs=costs, config=config, trade_archive=trade_archive
+        ).run(
             args.symbol,
             args.start_ms,
             args.end_ms,

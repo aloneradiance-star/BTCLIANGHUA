@@ -199,6 +199,51 @@ def test_funding_manifest_must_match_exactly() -> None:
         )
 
 
+@pytest.mark.parametrize(("side", "stop", "sign"), [("LONG", "90", 1), ("SHORT", "110", -1)])
+def test_funding_after_entry_and_before_final_close(side: str, stop: str, sign: int) -> None:
+    time = START + 26
+    events = [
+        FundingEvent("BTCUSDT", START, Decimal(".02"), Decimal(100)),
+        FundingEvent("BTCUSDT", time, Decimal(".001"), Decimal(103)),
+        FundingEvent("BTCUSDT", time, Decimal("-.002"), Decimal(107), "Special"),
+    ]
+    result = run([bar(0)], [signal(side, stop)], events=events, expected=(START, time, time))
+    trade = result.trades[0]
+    assert trade.exit_reason == "END_OF_DATA"
+    assert trade.funding_cost == sum(
+        (sign * trade.quantity * event.mark_price * event.rate for event in events[1:]),
+        Decimal(0),
+    )
+
+
+@pytest.mark.parametrize(("price", "reason"), [("80", "STOP_GAP"), ("130", "TAKE_PROFIT")])
+def test_funding_after_opening_exit_does_not_charge(price: str, reason: str) -> None:
+    time = START + 60_000 + 1
+    events = [FundingEvent("BTCUSDT", time, Decimal(".001"), Decimal(103))]
+    execution = [bar(0), bar(1, open_=price, high=price, low=price, close=price)]
+    trade = run(execution, [signal()], events=events, expected=(time,)).trades[0]
+    assert trade.exit_reason == reason
+    assert trade.funding_cost == 0
+
+
+@pytest.mark.parametrize(("index", "high", "low"), [(0, "101", "89"), (1, "125", "99")])
+def test_funding_and_an_interior_exit_require_ordering_evidence(
+    index: int, high: str, low: str
+) -> None:
+    execution = [bar(0), bar(1)]
+    execution[index] = bar(index, high=high, low=low)
+    time = execution[index].open_ms + 7
+    events = [FundingEvent("BTCUSDT", time, Decimal(".001"), Decimal(103))]
+    with pytest.raises(BacktestUnavailable, match=f"AMBIGUOUS_INTRAMINUTE_FUNDING: {time}"):
+        run(execution, [signal()], events=events, expected=(time,))
+
+
+def test_funding_manifest_rejects_a_one_millisecond_difference_within_a_minute() -> None:
+    events = [FundingEvent("BTCUSDT", START + 2, Decimal(".001"), Decimal(103))]
+    with pytest.raises(BacktestUnavailable, match="FUNDING_EVENTS_DO_NOT_MATCH_COMPLETENESS"):
+        run([bar(0)], [signal()], events=events, expected=(START + 1,))
+
+
 def test_missing_execution_minute_fails_closed() -> None:
     bars = [bar(0), bar(2)]
     with pytest.raises(BacktestUnavailable, match="GAP"):

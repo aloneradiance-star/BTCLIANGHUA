@@ -91,9 +91,7 @@ class PublicBacktestDataPreparer:
             end_ms,
             required_bars=candle_report.target_bars,
         )
-        funding = self.funding_store.coverage_readiness(
-            symbol, start_ms, end_ms, require_minute_aligned=True
-        )
+        funding = self.funding_store.coverage_readiness(symbol, start_ms, end_ms)
         execution_status = str(execution["status"])
         funding_status = str(funding["status"])
         if execution_status != "READY":

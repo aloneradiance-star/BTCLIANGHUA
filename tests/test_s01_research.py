@@ -88,6 +88,7 @@ def seed_funding(
     *,
     include_special: bool = True,
     funding_time_ms: int = START + MINUTE,
+    source: str = "BINANCE_PUBLIC_FAPI_FUNDING_RATE",
 ) -> None:
     records = [
         FundingRateRecord(
@@ -96,6 +97,7 @@ def seed_funding(
             Decimal("0.001"),
             Decimal(100),
             "Regular",
+            source,
         )
     ]
     if include_special:
@@ -106,6 +108,7 @@ def seed_funding(
                 Decimal("0.0005"),
                 Decimal(101),
                 "Special",
+                source,
             )
         )
     store = FundingStore(engine)
@@ -278,13 +281,19 @@ def test_submillisecond_candle_timestamps_block_replay(
     assert report.reason == f"{timeframe.upper()}_GAP_OR_MISALIGNED_CLOSE"
 
 
-def test_off_minute_funding_blocks_replay_with_specific_reason(db_engine: Engine) -> None:
+@pytest.mark.parametrize("source", ["BINANCE_PUBLIC_FAPI_FUNDING_RATE", "GITHUB_FUNDING_ARCHIVE"])
+def test_research_preserves_exact_funding_timestamp_when_order_is_clear(
+    db_engine: Engine, source: str
+) -> None:
     seed_history(db_engine)
-    seed_funding(db_engine, funding_time_ms=START + MINUTE + 1)
+    seed_funding(db_engine, funding_time_ms=START + MINUTE + 1, source=source)
+    readiness = FundingStore(db_engine).coverage_readiness("BTCUSDT", START, END)
+    assert readiness["source"] == source
     report = service(db_engine).run("BTCUSDT", START, END)
-    assert report.status == "UNAVAILABLE"
-    assert report.result is None
-    assert report.reason == "OFF_MINUTE_EVENTS"
+    assert report.status == "READY"
+    assert report.result is not None
+    assert report.data_provenance["funding"]["expected_timestamps_ms"] == [START + MINUTE + 1] * 2
+    assert report.data_provenance["funding"]["source"] == source
 
 
 def test_missing_execution_history_returns_unavailable(db_engine: Engine) -> None:

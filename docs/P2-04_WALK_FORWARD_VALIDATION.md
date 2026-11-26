@@ -78,31 +78,79 @@ python -m baqs.backtest.walk_forward \
   --cost-scenario stress:10:10
 ```
 
-Cost scenario format is `NAME:TAKER_FEE_BPS:SLIPPAGE_BPS`. At least two
-uniquely named scenarios are required. The example values are illustrative
-only; enter assumptions appropriate to the account/venue and do not infer
-the user's actual fee tier. S01-0.1 thresholds are frozen; this runner does
-not optimize parameters on test folds.
+Cost scenario format is `NAME:TAKER_FEE_BPS:SLIPPAGE_BPS`. Scenario names must
+be unique, with at least two distinct fee and slippage combinations. The
+example values illustrate the format. Supply explicit costs for the research
+scenario. S01-0.1 uses frozen thresholds throughout the evaluation.
 
 The runner evaluates BTCUSDT and ETHUSDT separately. Every fold reuses
 P2-03's read-only loader, exact 1m execution data, 2,920 preceding 15m bars,
 120 preceding closed 1h bars, and P2-01's Decimal event engine. Source
 candles/funding are never modified and reports are not persisted.
 
+## Intraminute funding evidence
+
+When a settlement and an exit share a minute, either research CLI can use a
+local manifest with `--trade-archive-manifest /path/to/trade-archives.json`.
+Save the Binance USD-M daily `trades` ZIP and pin the digest from its official
+`.CHECKSUM` file. Paths resolve relative to the manifest unless absolute.
+
+```json
+{
+  "archives": [
+    {
+      "path": "ETHUSDT-trades-2025-10-17.zip",
+      "sha256": "594b88f724cad42dbe3e205fdb0652b048436e6637c103aa595e1cc5a4aef1ef"
+    }
+  ]
+}
+```
+
+The reader verifies the archive SHA-256 and reconstructs the relevant minute's
+OHLC, base and quote volumes, and total trade count. It uses raw trade
+timestamps in milliseconds and rejects out-of-order trades in that minute.
+Trade IDs must increase. They may have gaps when the full minute reconciles.
+Use the [official USD-M daily trades archives](https://data.binance.vision/?prefix=data/futures/um/daily/trades/),
+whose CSV contains raw trades. Aggregate trades, mark-price candles and quote
+samples cannot provide this evidence.
+
+A verified crossing determines funding order. Modeled fill prices still use
+the existing minute execution rules. If both brackets were reached, the
+funding instant must precede both crossings or follow both. If no archive
+matches the symbol and day, or the timestamps tie, replay remains
+`AMBIGUOUS_INTRAMINUTE_FUNDING`. Unreadable or inconsistent archives return
+`INVALID_INTRAMINUTE_TRADE_EVIDENCE`. Reports expose used archive names,
+SHA-256 hashes, crossing timestamps and applied/skipped settlement times in
+`funding_order_evidence`. The replay is offline and does not modify source data.
+
 ## Report interpretation
 
 - `READY` means every fold and cost scenario passed data-quality checks and
   each fold met the configured minimum trade count. It does not mean
   profitable, robust, deployable or independently validated.
-- The report explicitly sets `market_regime_coverage=NOT_EVALUATED` and
-  `robustness_assessment=NOT_MADE`. Regime-stratified coverage requires a
-  separate review; do not describe this output as robust.
+- `regime_candidates_by_fold` reports counts from the existing six-state
+  candidate rules, unavailable observations and states absent from the fold.
+  Each 15m interval is labelled using only 15m and 1h candles already closed
+  at its opening. The evaluation-end boundary is excluded. Coverage is
+  calculated once per fold from the first scenario's verified input set.
+- `market_regime_coverage` reports `EVALUATED` when all intervals have a
+  candidate, `PARTIAL` when some are unavailable, and `UNAVAILABLE` when
+  none can be classified. A failed fold replay leaves the overall measure
+  `NOT_EVALUATED`. Candidate counts omit the Phase 1 5m confirmation gate.
+  `robustness_assessment=NOT_MADE` requires a separate review of real data
+  and trade samples under the observed market states.
 - `UNAVAILABLE` means at least one fold has incomplete or invalid inputs.
 - `INSUFFICIENT_SAMPLE` means one or more folds did not meet the minimum
   trade count. Do not describe such a result as robust.
 - Aggregate PnL is the sum of independent fold PnL; each fold starts with
   its own configured initial equity. It is **not** a compounded portfolio
   return. Worst-fold drawdown and duration-weighted exposure are reported.
+  Aggregation uses the same isolated Decimal precision and rounding as the
+  single-window replay. The cost matrix sums the monetary totals recorded
+  for each fold.
+- The scenario summary counts skipped signals by fold and reason. An interior
+  boundary signal belongs to the later fold. A signal at the evaluation end
+  is recorded as `NO_NEXT_1M_EXECUTION_BAR` in the final fold.
 - 1m OHLC cannot reconstruct intrabar paths, partial fills, order-book
   liquidity, market impact, liquidation or margin tiers. Close-to-close
   drawdown can understate intrabar risk.

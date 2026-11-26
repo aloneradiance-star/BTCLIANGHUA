@@ -5,12 +5,13 @@ All fees, slippage and funding inputs are explicit; missing funding coverage fai
 closed. Signals become eligible only at the next 1m candle open.
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
 from baqs.market_data.schema import FinalCandle
+from baqs.market_data.trade_archive import TradeArchive, TradeArchiveError
 
 Side = Literal["LONG", "SHORT"]
 ZERO = Decimal(0)
@@ -97,7 +98,6 @@ class FundingEvent:
         if (
             type(self.timestamp_ms) is not int
             or self.timestamp_ms < 0
-            or self.timestamp_ms % 60_000
             or not self.rate.is_finite()
             or not self.mark_price.is_finite()
             or self.mark_price <= ZERO
@@ -126,10 +126,7 @@ class FundingCoverage:
             or not self.complete
             or tuple(sorted(expected)) != expected
             or any(
-                type(timestamp) is not int
-                or timestamp < self.start_ms
-                or timestamp >= self.end_ms
-                or timestamp % 60_000
+                type(timestamp) is not int or timestamp < self.start_ms or timestamp >= self.end_ms
                 for timestamp in expected
             )
         ):
@@ -197,6 +194,20 @@ class BacktestMetrics:
 
 
 @dataclass(frozen=True, slots=True)
+class FundingOrderEvidence:
+    archive_name: str
+    archive_sha256: str
+    execution_minute_ms: int
+    position_entry_ms: int
+    trade_count: int
+    first_trade_ms: int
+    first_stop_crossing_ms: int | None
+    first_target_crossing_ms: int | None
+    funding_before_exit_ms: tuple[int, ...]
+    funding_after_exit_ms: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BacktestResult:
     symbol: str
     strategy_version: str
@@ -207,6 +218,7 @@ class BacktestResult:
     equity_curve: tuple[EquityPoint, ...]
     metrics: BacktestMetrics
     assumptions: dict[str, str]
+    funding_order_evidence: tuple[FundingOrderEvidence, ...] = ()
 
 
 @dataclass(slots=True)
@@ -258,14 +270,15 @@ def _validate_inputs(
     actual = tuple(event.timestamp_ms for event in events)
     if actual != expected:
         raise BacktestUnavailable("FUNDING_EVENTS_DO_NOT_MATCH_COMPLETENESS_MANIFEST")
-    funding_by_time: dict[int, list[FundingEvent]] = {}
+    funding_by_minute: dict[int, list[FundingEvent]] = {}
     bar_opens = {bar.open_ms for bar in bars}
     for event in events:
         if event.symbol != symbol:
             raise BacktestUnavailable("FUNDING_SYMBOL_MISMATCH")
-        if event.timestamp_ms not in bar_opens:
-            raise BacktestUnavailable("FUNDING_EVENT_NOT_ALIGNED_TO_EXECUTION_BAR")
-        funding_by_time.setdefault(event.timestamp_ms, []).append(event)
+        minute_open = event.timestamp_ms // 60_000 * 60_000
+        if minute_open not in bar_opens:
+            raise BacktestUnavailable("FUNDING_EVENT_HAS_NO_EXECUTION_BAR")
+        funding_by_minute.setdefault(minute_open, []).append(event)
 
     signal_by_time: dict[int, EntrySignal] = {}
     strategy_versions: set[str] = set()
@@ -289,7 +302,7 @@ def _validate_inputs(
         signal_by_time[signal.signal_time_ms] = signal
     if len(strategy_versions) > 1:
         raise BacktestUnavailable("MIXED_STRATEGY_VERSIONS")
-    return symbol, signal_by_time, funding_by_time
+    return symbol, signal_by_time, funding_by_minute
 
 
 def _entry_fill(reference: Decimal, side: Side, slippage: Decimal) -> Decimal:
@@ -345,30 +358,111 @@ def _close_position(
     return trade, cash + gross - exit_fee
 
 
-def _exit_trigger(position: _OpenPosition, bar: FinalCandle) -> tuple[Decimal, str] | None:
+def _apply_funding(
+    position: _OpenPosition, events: Iterable[FundingEvent], cash: Decimal
+) -> Decimal:
+    side_sign = ONE if position.signal.side == "LONG" else -ONE
+    for event in events:
+        if event.timestamp_ms > position.entry_time_ms:
+            cost = side_sign * position.quantity * event.mark_price * event.rate
+            position.funding_cost += cost
+            cash -= cost
+    return cash
+
+
+def _exit_trigger(position: _OpenPosition, bar: FinalCandle) -> tuple[Decimal, str, bool] | None:
+    """Return the exit price, reason and whether the exit is known at the open."""
     if position.signal.side == "LONG":
         stop_hit = bar.open <= position.stop or bar.low <= position.stop
         target_hit = bar.high >= position.target
         if stop_hit:
             if bar.open <= position.stop:
-                return bar.open, "STOP_GAP"
+                return bar.open, "STOP_GAP", True
             if target_hit:
-                return position.stop, "AMBIGUOUS_STOP_FIRST"
-            return position.stop, "STOP_LOSS"
+                return position.stop, "AMBIGUOUS_STOP_FIRST", False
+            return position.stop, "STOP_LOSS", False
         if target_hit:
-            return position.target, "TAKE_PROFIT"
+            return position.target, "TAKE_PROFIT", bar.open >= position.target
     else:
         stop_hit = bar.open >= position.stop or bar.high >= position.stop
         target_hit = bar.low <= position.target
         if stop_hit:
             if bar.open >= position.stop:
-                return bar.open, "STOP_GAP"
+                return bar.open, "STOP_GAP", True
             if target_hit:
-                return position.stop, "AMBIGUOUS_STOP_FIRST"
-            return position.stop, "STOP_LOSS"
+                return position.stop, "AMBIGUOUS_STOP_FIRST", False
+            return position.stop, "STOP_LOSS", False
         if target_hit:
-            return position.target, "TAKE_PROFIT"
+            return position.target, "TAKE_PROFIT", bar.open <= position.target
     return None
+
+
+def _order_funding_before_exit(
+    position: _OpenPosition,
+    bar: FinalCandle,
+    reason: str,
+    events: Sequence[FundingEvent],
+    trade_archive: TradeArchive | None,
+) -> tuple[tuple[FundingEvent, ...], FundingOrderEvidence]:
+    try:
+        minute = trade_archive.minute(bar) if trade_archive is not None else None
+    except TradeArchiveError as exc:
+        raise BacktestUnavailable(
+            f"INVALID_INTRAMINUTE_TRADE_EVIDENCE: {events[0].timestamp_ms}: {exc}"
+        ) from exc
+    if minute is None:
+        raise BacktestUnavailable(f"AMBIGUOUS_INTRAMINUTE_FUNDING: {events[0].timestamp_ms}")
+
+    long = position.signal.side == "LONG"
+    first_stop = next(
+        (
+            time
+            for time, price in minute.trades
+            if (price <= position.stop if long else price >= position.stop)
+        ),
+        None,
+    )
+    first_target = next(
+        (
+            time
+            for time, price in minute.trades
+            if (price >= position.target if long else price <= position.target)
+        ),
+        None,
+    )
+    crossings = {
+        "STOP_LOSS": (first_stop,),
+        "TAKE_PROFIT": (first_target,),
+        "AMBIGUOUS_STOP_FIRST": (first_stop, first_target),
+    }[reason]
+    known = tuple(time for time in crossings if time is not None)
+    if len(known) != len(crossings):
+        raise BacktestUnavailable(f"INVALID_INTRAMINUTE_TRADE_EVIDENCE: {events[0].timestamp_ms}")
+
+    # Where both brackets were hit, the stop-first price rule is unchanged.
+    # Require settlement order to agree for both possible exit triggers.
+    earliest, latest = min(known), max(known)
+    before: list[FundingEvent] = []
+    after: list[int] = []
+    for event in events:
+        if event.timestamp_ms < earliest:
+            before.append(event)
+        elif event.timestamp_ms > latest:
+            after.append(event.timestamp_ms)
+        else:
+            raise BacktestUnavailable(f"AMBIGUOUS_INTRAMINUTE_FUNDING: {event.timestamp_ms}")
+    return tuple(before), FundingOrderEvidence(
+        archive_name=minute.archive_name,
+        archive_sha256=minute.archive_sha256,
+        execution_minute_ms=bar.open_ms,
+        position_entry_ms=position.entry_time_ms,
+        trade_count=len(minute.trades),
+        first_trade_ms=minute.trades[0][0],
+        first_stop_crossing_ms=first_stop,
+        first_target_crossing_ms=first_target,
+        funding_before_exit_ms=tuple(event.timestamp_ms for event in before),
+        funding_after_exit_ms=tuple(after),
+    )
 
 
 class BacktestEngine:
@@ -382,8 +476,10 @@ class BacktestEngine:
         funding_coverage: FundingCoverage,
         costs: CostModel,
         config: BacktestConfig = BacktestConfig(),
+        *,
+        trade_archive: TradeArchive | None = None,
     ) -> BacktestResult:
-        symbol, signal_by_time, funding_by_time = _validate_inputs(
+        symbol, signal_by_time, funding_by_minute = _validate_inputs(
             execution_bars, signals, funding_events, funding_coverage
         )
         fee_rate = costs.taker_fee_bps / BPS
@@ -395,43 +491,24 @@ class BacktestEngine:
         trades: list[Trade] = []
         skipped: list[SkippedSignal] = []
         curve: list[EquityPoint] = []
+        funding_order_evidence: list[FundingOrderEvidence] = []
         active_bars = 0
 
         for bar in execution_bars:
             had_position_at_open = position is not None
 
             # Funding is assessed before any entry at this minute boundary.
-            events = funding_by_time.get(bar.open_ms, [])
-            if position is not None and events and bar.open_ms > position.entry_time_ms:
-                side_sign = ONE if position.signal.side == "LONG" else -ONE
-                for event in events:
-                    funding_cost = side_sign * position.quantity * event.mark_price * event.rate
-                    position.funding_cost += funding_cost
-                    cash -= funding_cost
-
-            if position is not None:
-                trigger = _exit_trigger(position, bar)
-                if trigger is not None:
-                    reference, reason = trigger
-                    trade, cash = _close_position(
-                        position,
-                        bar,
-                        reference,
-                        reason,
-                        exact_close=False,
-                        fee_rate=fee_rate,
-                        slippage_rate=slippage_rate,
-                        cash=cash,
-                    )
-                    trades.append(trade)
-                    position = None
+            events = funding_by_minute.get(bar.open_ms, [])
+            if position is not None and events:
+                at_open = (event for event in events if event.timestamp_ms == bar.open_ms)
+                cash = _apply_funding(position, at_open, cash)
 
             # Signals that arrive while a position is open are never queued or
             # reopened after an intrabar exit; record the skipped opportunity.
             entered_this_bar = False
             signal = signal_by_time.get(bar.open_ms)
             if signal is not None:
-                if had_position_at_open or position is not None:
+                if had_position_at_open:
                     skipped.append(
                         SkippedSignal(
                             signal.signal_time_ms,
@@ -501,22 +578,32 @@ class BacktestEngine:
                                 )
                                 cash -= entry_fee
                                 entered_this_bar = True
-                                # Entry may be stopped/targeted within this same 1m bar.
-                                trigger = _exit_trigger(position, bar)
-                                if trigger is not None:
-                                    exit_reference, reason = trigger
-                                    trade, cash = _close_position(
-                                        position,
-                                        bar,
-                                        exit_reference,
-                                        reason,
-                                        exact_close=False,
-                                        fee_rate=fee_rate,
-                                        slippage_rate=slippage_rate,
-                                        cash=cash,
-                                    )
-                                    trades.append(trade)
-                                    position = None
+
+            if position is not None:
+                later_events = [event for event in events if event.timestamp_ms > bar.open_ms]
+                trigger = _exit_trigger(position, bar)
+                if trigger is not None:
+                    reference, reason, exit_at_open = trigger
+                    if later_events and not exit_at_open:
+                        before_exit, evidence = _order_funding_before_exit(
+                            position, bar, reason, later_events, trade_archive
+                        )
+                        cash = _apply_funding(position, before_exit, cash)
+                        funding_order_evidence.append(evidence)
+                    trade, cash = _close_position(
+                        position,
+                        bar,
+                        reference,
+                        reason,
+                        exact_close=False,
+                        fee_rate=fee_rate,
+                        slippage_rate=slippage_rate,
+                        cash=cash,
+                    )
+                    trades.append(trade)
+                    position = None
+                elif later_events:
+                    cash = _apply_funding(position, later_events, cash)
 
             if had_position_at_open or position is not None or entered_this_bar:
                 active_bars += 1
@@ -616,6 +703,7 @@ class BacktestEngine:
             skipped_signals=tuple(skipped),
             equity_curve=tuple(curve),
             metrics=metrics,
+            funding_order_evidence=tuple(funding_order_evidence),
             assumptions={
                 "fill_timing": "NEXT_1M_OPEN",
                 "stop_target_resolution": "ADVERSE_STOP_FIRST",
