@@ -86,3 +86,14 @@ required candles are unavailable, or the collector connection is unhealthy.
 Other supported timeframe values expose historical snapshots only. Output is
 **not** a trade order, not a calibrated probability and not an investment
 recommendation. See `docs/P1-04_REGIME_CLASSIFIER.md`.
+
+## Phase 2 / P2-01 offline S01 backtesting
+
+P2-01 adds a pure Decimal event-driven simulator and the research-only
+`S01TrendPullbackStrategy`. See `docs/P2-01_BACKTEST_ENGINE.md`.
+Signals use completed 15m/1h bars and may fill no earlier than the next 1m
+open. Fee, adverse slippage and a complete funding-event manifest are required.
+No HTTP write endpoint, private exchange API, live order or leverage is present.
+P1-02A does not yet provide historical 1m execution bars or historical funding
+and mark-price events; use synthetic fixtures until the public-data follow-up
+is complete. A CI pass is not a profitability result.
