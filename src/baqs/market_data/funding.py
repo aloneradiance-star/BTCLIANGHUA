@@ -247,15 +247,15 @@ class FundingStore:
                     "expected_events": coverage.event_count,
                     "present_events": len(rows),
                 }
-            status = "READY"
-            if require_minute_aligned and any(timestamp % 60_000 for timestamp in actual_times):
-                status = "OFF_MINUTE_EVENTS"
+            off_minute_count = sum(timestamp % 60_000 != 0 for timestamp in actual_times)
+            status = "OFF_MINUTE_EVENTS" if require_minute_aligned and off_minute_count else "READY"
             return {
                 "status": status,
                 "symbol": symbol,
                 "start_ms": start_ms,
                 "end_ms": end_ms,
                 "event_count": len(rows),
+                "off_minute_event_count": off_minute_count,
                 "expected_timestamps_ms": actual_times,
                 "source": coverage.source,
             }

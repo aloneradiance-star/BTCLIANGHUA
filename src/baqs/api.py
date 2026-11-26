@@ -153,9 +153,7 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
             execution = candles_store.history_readiness(
                 symbol, "1m", end_ms, required_bars=required_bars, require_latest=False
             )
-            funding = funding_store.coverage_readiness(
-                symbol, start_ms, end_ms, require_minute_aligned=True
-            )
+            funding = funding_store.coverage_readiness(symbol, start_ms, end_ms)
             ready = execution["status"] == "READY" and funding["status"] == "READY"
             symbols[symbol] = {
                 "status": "READY" if ready else "UNAVAILABLE",

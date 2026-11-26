@@ -69,10 +69,14 @@ parameters. The signal is not a calibrated probability or trade recommendation.
   candle, stop executes first. A gap through a stop fills at the worse bar open.
   This is conservative but does not model order-book depth, partial fills,
   spread dynamics or market impact.
-- Funding is assessed only when a position was already open before the funding
-  timestamp. It is assessed before entries and stop-gap exits at that boundary.
-  Positive funding costs longs and credits shorts; negative funding reverses
-  the cash flow.
+- Funding uses the original settlement millisecond and applies only to a
+  position already open at that instant. Events at the minute boundary precede
+  entries and exits. A later event includes positions entered at the open and
+  excludes positions closed at the open. Positive funding costs longs and
+  credits shorts, with the direction reversed for negative funding.
+- A funding event sharing a minute with a stop or target whose time is unknown
+  makes replay unavailable with `AMBIGUOUS_INTRAMINUTE_FUNDING` and the original
+  event timestamp. Minute OHLC does not establish the ordering.
 - Signals arriving while a position is already open are recorded as skipped;
   a position closed inside a minute cannot be reopened in that same minute.
 - A short setup whose fixed 2R take-profit would be nonpositive is skipped.

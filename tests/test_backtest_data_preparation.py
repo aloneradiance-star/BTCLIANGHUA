@@ -3,7 +3,6 @@
 import asyncio
 from decimal import Decimal
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
@@ -11,7 +10,7 @@ from baqs.api import create_app
 from baqs.market_data.funding import FundingStore
 from baqs.market_data.prepare_backtest_data import PublicBacktestDataPreparer
 from baqs.market_data.repository import CandleStore
-from baqs.market_data.schema import FinalCandle, FundingGap, FundingRateRecord
+from baqs.market_data.schema import FinalCandle, FundingRateRecord
 from baqs.settings import Settings
 
 MINUTE = 60_000
@@ -120,7 +119,7 @@ def test_one_command_prepares_exact_shared_window_and_is_idempotent(
     asyncio.run(run())
 
 
-def test_off_minute_funding_is_archived_but_window_cannot_be_replayed(db_engine: Engine) -> None:
+def test_data_readiness_reports_verified_off_minute_funding(db_engine: Engine) -> None:
     start_ms = ANCHOR - 60 * MINUTE
     event_ms = start_ms + 30 * MINUTE + 1
     reader = StubReader(funding_offset_ms=1)
@@ -132,8 +131,8 @@ def test_off_minute_funding_is_archived_but_window_cannot_be_replayed(db_engine:
         chunk_bars=60,
         funding_pause_seconds=0,
     )
-    with pytest.raises(FundingGap, match="OFF_MINUTE_EVENTS"):
-        asyncio.run(preparer.run("BTCUSDT", bars=60))
+    report = asyncio.run(preparer.run("BTCUSDT", bars=60))
+    assert report.readiness == "READY"
     snapshot = funding_store.load_window("BTCUSDT", start_ms, ANCHOR)
     assert snapshot.expected_timestamps_ms == (event_ms,)
     assert snapshot.events[0].funding_time_ms == event_ms
@@ -152,5 +151,7 @@ def test_off_minute_funding_is_archived_but_window_cannot_be_replayed(db_engine:
     assert response.status_code == 200
     symbol = response.json()["symbols"]["BTCUSDT"]
     assert symbol["execution_1m"]["status"] == "READY"
-    assert symbol["funding"]["status"] == "OFF_MINUTE_EVENTS"
-    assert symbol["status"] == "UNAVAILABLE"
+    assert symbol["funding"]["status"] == "READY"
+    assert symbol["funding"]["off_minute_event_count"] == 1
+    assert symbol["funding"]["expected_timestamps_ms"] == [event_ms]
+    assert symbol["status"] == "READY"

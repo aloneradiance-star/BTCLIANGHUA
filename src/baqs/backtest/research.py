@@ -352,10 +352,6 @@ class S01ResearchService:
         )
 
         funding_snapshot = self.funding_store.load_window(symbol, start_ms, end_ms)
-        if any(
-            timestamp % INTERVAL_MS["1m"] for timestamp in funding_snapshot.expected_timestamps_ms
-        ):
-            raise BacktestUnavailable("OFF_MINUTE_EVENTS")
         funding_events = tuple(
             FundingEvent(
                 symbol=record.symbol,

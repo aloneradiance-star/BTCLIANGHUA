@@ -29,8 +29,9 @@ For a requested 15m-aligned half-open UTC window `[start_ms, end_ms)`:
 - Load the exact funding `[start_ms, end_ms)` manifest using the stored source
   fingerprints. Missing, incomplete, tampered or conflicting manifests return
   `UNAVAILABLE`. Regular and Special events at one timestamp remain separate.
-  A verified manifest with between-minute settlements returns
-  `UNAVAILABLE` with reason `OFF_MINUTE_EVENTS`.
+  Between-minute settlements retain their source timestamp. A settlement that
+  shares a minute with an exit of unknown timing returns `UNAVAILABLE` with
+  `AMBIGUOUS_INTRAMINUTE_FUNDING` and the original event timestamp.
 - Signals are generated from closed 15m candles. The P2-01 engine can enter only
   at the next 1m open; the final exclusive boundary cannot create a fill.
 

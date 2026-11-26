@@ -278,13 +278,13 @@ def test_submillisecond_candle_timestamps_block_replay(
     assert report.reason == f"{timeframe.upper()}_GAP_OR_MISALIGNED_CLOSE"
 
 
-def test_off_minute_funding_blocks_replay_with_specific_reason(db_engine: Engine) -> None:
+def test_research_preserves_exact_funding_timestamp_when_order_is_clear(db_engine: Engine) -> None:
     seed_history(db_engine)
     seed_funding(db_engine, funding_time_ms=START + MINUTE + 1)
     report = service(db_engine).run("BTCUSDT", START, END)
-    assert report.status == "UNAVAILABLE"
-    assert report.result is None
-    assert report.reason == "OFF_MINUTE_EVENTS"
+    assert report.status == "READY"
+    assert report.result is not None
+    assert report.data_provenance["funding"]["expected_timestamps_ms"] == [START + MINUTE + 1] * 2
 
 
 def test_missing_execution_history_returns_unavailable(db_engine: Engine) -> None:
