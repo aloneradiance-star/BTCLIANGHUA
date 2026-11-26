@@ -13,10 +13,15 @@ Research-only data ingestion. The only remote calls made by the collector:
 - Binance documents REST/WS close timestamps as inclusive milliseconds (`T`), but local `close_time` stores the **exclusive interval boundary** (`T+1ms`).
 - REST may include an unfinished live candle. Accept only if `close_ms <= serverTime`.
 - WebSocket provisional messages with `k.x != true` are ignored.
+- The collector rejects a WebSocket candle whose close boundary is later than
+  its local UTC receipt time. Reconnect reconciliation stays unhealthy when
+  a stored finalized candle extends beyond the exchange clock.
 - Invalid OHLCV, unsupported symbol, invalid stream symbol or missing bars fail closed.
 - A finalized candle is immutable; conflicting duplicate REST/WS data raises `CandleConflict` and requires investigation. Do not silently rewrite historical facts.
 - All financial values are persisted as PostgreSQL `NUMERIC(28,12)` and parsed via Decimal.
-- Health reports `READY`, `NO_DATA`, `STALE` or `GAP`. Each report checks the most recent 240 finalized candles; more distant historical completeness is **not** guaranteed by that window alone.
+- Health reports `READY`, `NO_DATA`, `STALE` or `GAP`. A future close boundary
+  prevents readiness. Each report checks the most recent 240 finalized candles;
+  more distant historical completeness is **not** guaranteed by that window alone.
 
 ## Run
 ```bash
@@ -54,7 +59,7 @@ Migration `0002_market_stream` adds the collector state table. Apply it with
 `alembic upgrade head` before starting the API and collector. Downgrading to
 `0001_public` removes collector state and preserves candles and regime snapshots.
 
-`GET /api/v1/market/candles` returns finalized bars only. No price predictions or trades are returned.
+`GET /api/v1/market/candles` returns finalized bars whose close time has arrived. No price predictions or trades are returned.
 
 ## API references (reviewed November 2026)
 - https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data
