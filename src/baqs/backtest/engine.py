@@ -11,6 +11,7 @@ from decimal import Decimal
 from typing import Literal
 
 from baqs.market_data.schema import FinalCandle
+from baqs.market_data.trade_archive import TradeArchive, TradeArchiveError
 
 Side = Literal["LONG", "SHORT"]
 ZERO = Decimal(0)
@@ -193,6 +194,20 @@ class BacktestMetrics:
 
 
 @dataclass(frozen=True, slots=True)
+class FundingOrderEvidence:
+    archive_name: str
+    archive_sha256: str
+    execution_minute_ms: int
+    position_entry_ms: int
+    trade_count: int
+    first_trade_ms: int
+    first_stop_crossing_ms: int | None
+    first_target_crossing_ms: int | None
+    funding_before_exit_ms: tuple[int, ...]
+    funding_after_exit_ms: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BacktestResult:
     symbol: str
     strategy_version: str
@@ -203,6 +218,7 @@ class BacktestResult:
     equity_curve: tuple[EquityPoint, ...]
     metrics: BacktestMetrics
     assumptions: dict[str, str]
+    funding_order_evidence: tuple[FundingOrderEvidence, ...] = ()
 
 
 @dataclass(slots=True)
@@ -381,6 +397,74 @@ def _exit_trigger(position: _OpenPosition, bar: FinalCandle) -> tuple[Decimal, s
     return None
 
 
+def _order_funding_before_exit(
+    position: _OpenPosition,
+    bar: FinalCandle,
+    reason: str,
+    events: Sequence[FundingEvent],
+    trade_archive: TradeArchive | None,
+) -> tuple[tuple[FundingEvent, ...], FundingOrderEvidence]:
+    try:
+        minute = trade_archive.minute(bar) if trade_archive is not None else None
+    except TradeArchiveError as exc:
+        raise BacktestUnavailable(
+            f"INVALID_INTRAMINUTE_TRADE_EVIDENCE: {events[0].timestamp_ms}: {exc}"
+        ) from exc
+    if minute is None:
+        raise BacktestUnavailable(f"AMBIGUOUS_INTRAMINUTE_FUNDING: {events[0].timestamp_ms}")
+
+    long = position.signal.side == "LONG"
+    first_stop = next(
+        (
+            time
+            for time, price in minute.trades
+            if (price <= position.stop if long else price >= position.stop)
+        ),
+        None,
+    )
+    first_target = next(
+        (
+            time
+            for time, price in minute.trades
+            if (price >= position.target if long else price <= position.target)
+        ),
+        None,
+    )
+    crossings = {
+        "STOP_LOSS": (first_stop,),
+        "TAKE_PROFIT": (first_target,),
+        "AMBIGUOUS_STOP_FIRST": (first_stop, first_target),
+    }[reason]
+    known = tuple(time for time in crossings if time is not None)
+    if len(known) != len(crossings):
+        raise BacktestUnavailable(f"INVALID_INTRAMINUTE_TRADE_EVIDENCE: {events[0].timestamp_ms}")
+
+    # Where both brackets were hit, the stop-first price rule is unchanged.
+    # Require settlement order to agree for both possible exit triggers.
+    earliest, latest = min(known), max(known)
+    before: list[FundingEvent] = []
+    after: list[int] = []
+    for event in events:
+        if event.timestamp_ms < earliest:
+            before.append(event)
+        elif event.timestamp_ms > latest:
+            after.append(event.timestamp_ms)
+        else:
+            raise BacktestUnavailable(f"AMBIGUOUS_INTRAMINUTE_FUNDING: {event.timestamp_ms}")
+    return tuple(before), FundingOrderEvidence(
+        archive_name=minute.archive_name,
+        archive_sha256=minute.archive_sha256,
+        execution_minute_ms=bar.open_ms,
+        position_entry_ms=position.entry_time_ms,
+        trade_count=len(minute.trades),
+        first_trade_ms=minute.trades[0][0],
+        first_stop_crossing_ms=first_stop,
+        first_target_crossing_ms=first_target,
+        funding_before_exit_ms=tuple(event.timestamp_ms for event in before),
+        funding_after_exit_ms=tuple(after),
+    )
+
+
 class BacktestEngine:
     """One-position-per-symbol simulator with conservative 1m OHLC bracket fills."""
 
@@ -392,6 +476,8 @@ class BacktestEngine:
         funding_coverage: FundingCoverage,
         costs: CostModel,
         config: BacktestConfig = BacktestConfig(),
+        *,
+        trade_archive: TradeArchive | None = None,
     ) -> BacktestResult:
         symbol, signal_by_time, funding_by_minute = _validate_inputs(
             execution_bars, signals, funding_events, funding_coverage
@@ -405,6 +491,7 @@ class BacktestEngine:
         trades: list[Trade] = []
         skipped: list[SkippedSignal] = []
         curve: list[EquityPoint] = []
+        funding_order_evidence: list[FundingOrderEvidence] = []
         active_bars = 0
 
         for bar in execution_bars:
@@ -498,9 +585,11 @@ class BacktestEngine:
                 if trigger is not None:
                     reference, reason, exit_at_open = trigger
                     if later_events and not exit_at_open:
-                        raise BacktestUnavailable(
-                            f"AMBIGUOUS_INTRAMINUTE_FUNDING: {later_events[0].timestamp_ms}"
+                        before_exit, evidence = _order_funding_before_exit(
+                            position, bar, reason, later_events, trade_archive
                         )
+                        cash = _apply_funding(position, before_exit, cash)
+                        funding_order_evidence.append(evidence)
                     trade, cash = _close_position(
                         position,
                         bar,
@@ -614,6 +703,7 @@ class BacktestEngine:
             skipped_signals=tuple(skipped),
             equity_curve=tuple(curve),
             metrics=metrics,
+            funding_order_evidence=tuple(funding_order_evidence),
             assumptions={
                 "fill_timing": "NEXT_1M_OPEN",
                 "stop_target_resolution": "ADVERSE_STOP_FIRST",

@@ -18,6 +18,7 @@ from decimal import (
     localcontext,
 )
 from hashlib import sha256
+from pathlib import Path
 from typing import Any, Literal, cast
 
 from sqlalchemy import select
@@ -45,6 +46,7 @@ from baqs.market_data.schema import (
     FundingGap,
     InvalidCandle,
 )
+from baqs.market_data.trade_archive import TradeArchive, TradeArchiveError
 from baqs.models import Candle
 from baqs.settings import get_settings
 from baqs.strategies.s01 import S01Config, S01TrendPullbackStrategy
@@ -252,6 +254,7 @@ class S01ResearchService:
         costs: CostModel,
         config: BacktestConfig | None = None,
         strategy_config: S01Config | None = None,
+        trade_archive: TradeArchive | None = None,
     ) -> None:
         resolved_config = config if config is not None else BacktestConfig()
         resolved_strategy = strategy_config if strategy_config is not None else S01Config()
@@ -263,6 +266,7 @@ class S01ResearchService:
         self.strategy = S01TrendPullbackStrategy(resolved_strategy)
         self.candle_store = CandleStore(engine)
         self.funding_store = FundingStore(engine)
+        self.trade_archive = trade_archive
 
     @property
     def strategy_parameters(self) -> dict[str, str]:
@@ -467,6 +471,7 @@ class S01ResearchService:
                     inputs.funding_coverage,
                     self.costs,
                     self.config,
+                    trade_archive=self.trade_archive,
                 )
                 if include_regime_candidates:
                     inputs.provenance["market_regime_candidates"] = measure_regime_candidates(
@@ -526,6 +531,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--slippage-bps", required=True, type=_decimal_argument)
     parser.add_argument("--initial-equity", type=_decimal_argument, default=Decimal("10000"))
     parser.add_argument("--risk-fraction", type=_decimal_argument, default=Decimal("0.005"))
+    parser.add_argument(
+        "--trade-archive-manifest",
+        type=Path,
+        help="Local manifest of SHA-256-pinned daily trades ZIPs",
+    )
     return parser.parse_args()
 
 
@@ -541,9 +551,19 @@ def main() -> None:
         risk_fraction=args.risk_fraction,
         max_notional_fraction=Decimal(1),
     )
+    try:
+        trade_archive = (
+            TradeArchive.from_manifest(args.trade_archive_manifest)
+            if args.trade_archive_manifest is not None
+            else None
+        )
+    except TradeArchiveError as exc:
+        raise SystemExit(f"INVALID_TRADE_ARCHIVE_MANIFEST: {exc}") from exc
     engine = make_engine(settings)
     try:
-        report = S01ResearchService(engine, costs=costs, config=config).run(
+        report = S01ResearchService(
+            engine, costs=costs, config=config, trade_archive=trade_archive
+        ).run(
             args.symbol,
             args.start_ms,
             args.end_ms,

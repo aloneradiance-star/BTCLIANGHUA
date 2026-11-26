@@ -5,6 +5,7 @@ import json
 from collections import Counter
 from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from decimal import Decimal, InvalidOperation, localcontext
+from pathlib import Path
 from typing import Any, Literal, cast
 
 from sqlalchemy.engine import Engine
@@ -20,6 +21,7 @@ from baqs.backtest.research import (
 )
 from baqs.db import make_engine
 from baqs.market_data.schema import INTERVAL_MS, SYMBOLS
+from baqs.market_data.trade_archive import TradeArchive, TradeArchiveError
 from baqs.settings import get_settings
 from baqs.strategies.s01 import S01Config
 
@@ -208,6 +210,7 @@ class WalkForwardResearchService:
         fold_count: int = 3,
         minimum_trades_per_fold: int = 5,
         config: BacktestConfig | None = None,
+        trade_archive: TradeArchive | None = None,
     ) -> None:
         scenarios = tuple(cost_scenarios)
         if len(scenarios) < 2 or len({scenario.name for scenario in scenarios}) != len(scenarios):
@@ -223,6 +226,7 @@ class WalkForwardResearchService:
         self.fold_count = fold_count
         self.minimum_trades_per_fold = minimum_trades_per_fold
         self.config = config if config is not None else BacktestConfig()
+        self.trade_archive = trade_archive
 
     def run(self, symbol: str, start_ms: int, end_ms: int) -> WalkForwardReport:
         if symbol not in SYMBOLS:
@@ -241,6 +245,7 @@ class WalkForwardResearchService:
                     costs=CostModel(scenario.taker_fee_bps, scenario.slippage_bps),
                     config=self.config,
                     strategy_config=strategy_config,
+                    trade_archive=self.trade_archive,
                 ).run(
                     symbol,
                     fold.start_ms,
@@ -357,6 +362,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--initial-equity", type=Decimal, default=Decimal("10000"))
     parser.add_argument("--risk-fraction", type=Decimal, default=Decimal("0.005"))
+    parser.add_argument(
+        "--trade-archive-manifest",
+        type=Path,
+        help="Local manifest of SHA-256-pinned daily trades ZIPs",
+    )
     return parser.parse_args()
 
 
@@ -372,6 +382,14 @@ def main() -> None:
         risk_fraction=args.risk_fraction,
         max_notional_fraction=Decimal(1),
     )
+    try:
+        trade_archive = (
+            TradeArchive.from_manifest(args.trade_archive_manifest)
+            if args.trade_archive_manifest is not None
+            else None
+        )
+    except TradeArchiveError as exc:
+        raise SystemExit(f"INVALID_TRADE_ARCHIVE_MANIFEST: {exc}") from exc
     engine = make_engine(settings)
     try:
         report = WalkForwardResearchService(
@@ -380,6 +398,7 @@ def main() -> None:
             fold_count=args.fold_count,
             minimum_trades_per_fold=args.minimum_trades_per_fold,
             config=config,
+            trade_archive=trade_archive,
         ).run(args.symbol, args.start_ms, args.end_ms)
         print(walk_forward_report_json(report))
         if report.status != "READY":

@@ -144,5 +144,10 @@ strict chronological folds and exact funding manifests. `READY` means the
 data and minimum sample gates passed; it is not a profitability or robustness
 claim. The report includes per-fold counts from the six-state candidate rules
 and marks the robustness assessment NOT_MADE.
+Add `--trade-archive-manifest /path/to/trade-archives.json` to either research
+CLI when a documented daily Binance USD-M trade file can resolve funding and
+exit order within the same minute. Run the offline verification with
+`python -m pytest -q tests/test_trade_archive.py`.
+
 See `docs/P2-04_WALK_FORWARD_VALIDATION.md` for the 90-day window layout,
 per-fold funding preparation and aggregation limitations.

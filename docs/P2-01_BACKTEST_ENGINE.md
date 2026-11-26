@@ -76,7 +76,11 @@ parameters. The signal is not a calibrated probability or trade recommendation.
   credits shorts, with the direction reversed for negative funding.
 - A funding event sharing a minute with a stop or target whose time is unknown
   makes replay unavailable with `AMBIGUOUS_INTRAMINUTE_FUNDING` and the original
-  event timestamp. Minute OHLC does not establish the ordering.
+  event timestamp. A verified daily trade archive can establish which bracket
+  crossings are strictly before or after settlement. If both brackets are hit,
+  funding order must agree for both crosses. Equal millisecond timestamps remain
+  ambiguous. This evidence preserves the existing adverse stop-first pricing.
+  See the [manifest contract](P2-04_WALK_FORWARD_VALIDATION.md#intraminute-funding-evidence).
 - Signals arriving while a position is already open are recorded as skipped;
   a position closed inside a minute cannot be reopened in that same minute.
 - A short setup whose fixed 2R take-profit would be nonpositive is skipped.

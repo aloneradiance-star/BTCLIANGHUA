@@ -88,6 +88,41 @@ P2-03's read-only loader, exact 1m execution data, 2,920 preceding 15m bars,
 120 preceding closed 1h bars, and P2-01's Decimal event engine. Source
 candles/funding are never modified and reports are not persisted.
 
+## Intraminute funding evidence
+
+When a settlement and an exit share a minute, either research CLI can use a
+local manifest with `--trade-archive-manifest /path/to/trade-archives.json`.
+Save the Binance USD-M daily `trades` ZIP and pin the digest from its official
+`.CHECKSUM` file. Paths resolve relative to the manifest unless absolute.
+
+```json
+{
+  "archives": [
+    {
+      "path": "ETHUSDT-trades-2025-10-17.zip",
+      "sha256": "594b88f724cad42dbe3e205fdb0652b048436e6637c103aa595e1cc5a4aef1ef"
+    }
+  ]
+}
+```
+
+The reader verifies the archive SHA-256 and reconstructs the relevant minute's
+OHLC, base and quote volumes, and total trade count. It uses raw trade
+timestamps in milliseconds and rejects out-of-order trades in that minute.
+Trade IDs must increase. They may have gaps when the full minute reconciles.
+Use the [official USD-M daily trades archives](https://data.binance.vision/?prefix=data/futures/um/daily/trades/),
+whose CSV contains raw trades. Aggregate trades, mark-price candles and quote
+samples cannot provide this evidence.
+
+A verified crossing determines funding order. Modeled fill prices still use
+the existing minute execution rules. If both brackets were reached, the
+funding instant must precede both crossings or follow both. If no archive
+matches the symbol and day, or the timestamps tie, replay remains
+`AMBIGUOUS_INTRAMINUTE_FUNDING`. Unreadable or inconsistent archives return
+`INVALID_INTRAMINUTE_TRADE_EVIDENCE`. Reports expose used archive names,
+SHA-256 hashes, crossing timestamps and applied/skipped settlement times in
+`funding_order_evidence`. The replay is offline and does not modify source data.
+
 ## Report interpretation
 
 - `READY` means every fold and cost scenario passed data-quality checks and
