@@ -96,11 +96,66 @@ def test_funding_rest_paginates_inclusive_api_with_last_time_plus_one_ms(
         assert events[-1].funding_rate == Decimal("-.001")
         assert calls == [
             (START, END - 1, 2),
-            (120_000, 120_000, 1000),
+            (120_000, 120_000, 3),
             (120_001, END - 1, 2),
         ]
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize(("page_size", "page_interval"), [(200, 0.65), (201, 3.1)])
+def test_funding_limit_applies_to_page_boundary_retry_and_next_symbol(
+    monkeypatch: pytest.MonkeyPatch, page_size: int, page_interval: float
+) -> None:
+    now = 100.0
+    requests: list[tuple[int, float]] = []
+    boundary = START + page_size - 1
+
+    async def sleep(delay: float) -> None:
+        nonlocal now
+        now += delay
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/fapi/v1/time":
+            return httpx.Response(200, json={"serverTime": SERVER})
+        assert request.url.path == "/fapi/v1/fundingRate"
+        params = request.url.params
+        limit = int(params["limit"])
+        requests.append((limit, now - 100.0))
+        if params["symbol"] == "ETHUSDT":
+            return httpx.Response(200, json=[])
+        start, end = int(params["startTime"]), int(params["endTime"])
+        if start == START:
+            return httpx.Response(200, json=[row(ts) for ts in range(START, boundary + 1)])
+        if start == end == boundary:
+            return httpx.Response(200, json=[row(boundary)])
+        assert start == boundary + 1 and end == END - 1
+        if len(requests) == 3:
+            return httpx.Response(429, headers={"Retry-After": "2"})
+        return httpx.Response(200, json=[row(boundary + 1)])
+
+    async def run() -> None:
+        async with httpx.AsyncClient(
+            base_url="https://fapi.binance.com", transport=httpx.MockTransport(handler)
+        ) as client:
+            rest = PublicFuturesREST(client)
+            events = await rest.fetch_funding_range(
+                "BTCUSDT", START, END, page_size=page_size, pause_seconds=0
+            )
+            assert len(events) == page_size + 1
+            assert await rest.fetch_funding_range("ETHUSDT", START, END, page_size=page_size) == []
+
+    monkeypatch.setattr("baqs.market_data.rest.monotonic", lambda: now)
+    monkeypatch.setattr("baqs.market_data.rest.asyncio.sleep", sleep)
+    asyncio.run(run())
+
+    boundary_request = page_interval
+    next_page = boundary_request + 0.65
+    retry = next_page + max(2, page_interval)
+    assert [limit for limit, _ in requests] == [page_size, 3, page_size, page_size, page_size]
+    assert [sent_at for _, sent_at in requests] == pytest.approx(
+        [0, boundary_request, next_page, retry, retry + page_interval]
+    )
 
 
 def test_funding_rest_rejects_missing_mark_price() -> None:

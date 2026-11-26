@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Sequence
 from math import isfinite
+from time import monotonic
 from typing import cast
 
 import httpx
@@ -21,6 +22,9 @@ from baqs.market_data.schema import (
 )
 
 PUBLIC_BASE_URL = "https://fapi.binance.com"
+FUNDING_RATE_PATH = "/fapi/v1/fundingRate"
+# Two rate types are supported. A third row makes the boundary ambiguous.
+FUNDING_BOUNDARY_LIMIT = 3
 
 
 class PublicFuturesREST:
@@ -28,10 +32,25 @@ class PublicFuturesREST:
 
     def __init__(self, client: httpx.AsyncClient) -> None:
         self.client = client
+        self._funding_request_lock = asyncio.Lock()
+        self._next_funding_request_at: float | None = None
+
+    async def _pace_funding_request(self, limit: int) -> None:
+        # Leave headroom below 500 or 100 requests per 300 seconds.
+        spacing = 0.65 if limit <= 200 else 3.1
+        async with self._funding_request_lock:
+            if self._next_funding_request_at is not None:
+                wait_seconds = self._next_funding_request_at - monotonic()
+                if wait_seconds > 0:
+                    await asyncio.sleep(wait_seconds)
+            self._next_funding_request_at = monotonic() + spacing
 
     async def _request(self, path: str, params: dict[str, int | str] | None = None) -> object:
         for attempt in range(3):
             delay = 0.25 * 2**attempt
+            if path == FUNDING_RATE_PATH:
+                limit = int(params.get("limit", 100)) if params is not None else 100
+                await self._pace_funding_request(limit)
             try:
                 response = await self.client.get(path, params=params, timeout=10.0)
                 response.raise_for_status()
@@ -169,7 +188,7 @@ class PublicFuturesREST:
         result: list[FundingRateRecord] = []
         for page_index in range(max_pages):
             response = await self._request(
-                "/fapi/v1/fundingRate",
+                FUNDING_RATE_PATH,
                 {"symbol": symbol, "startTime": cursor, "endTime": end_ms - 1, "limit": page_size},
             )
             if not isinstance(response, list):
@@ -196,15 +215,17 @@ class PublicFuturesREST:
 
             boundary_time = page[-1].funding_time_ms
             boundary_response = await self._request(
-                "/fapi/v1/fundingRate",
+                FUNDING_RATE_PATH,
                 {
                     "symbol": symbol,
                     "startTime": boundary_time,
                     "endTime": boundary_time,
-                    "limit": 1000,
+                    "limit": FUNDING_BOUNDARY_LIMIT,
                 },
             )
-            if not isinstance(boundary_response, list) or len(boundary_response) >= 1000:
+            if not isinstance(boundary_response, list) or (
+                len(boundary_response) >= FUNDING_BOUNDARY_LIMIT
+            ):
                 raise FundingGap("Funding pagination boundary is ambiguous")
             boundary_events = [from_funding_row(symbol, row) for row in boundary_response]
             boundary_records = {

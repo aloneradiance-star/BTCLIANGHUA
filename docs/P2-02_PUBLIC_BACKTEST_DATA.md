@@ -3,7 +3,7 @@
 **Research-only public data.** This task does not authenticate a Binance account,
 subscribe to private user streams, submit orders, or start automatically.
 
-## Verified official USDⓈ-M REST contract (2026-11-23)
+## Verified official USDⓈ-M REST contract (2026-11-26)
 
 - `GET /fapi/v1/klines` supports `interval=1m`; candles are uniquely
   identified by open time and the documented maximum page limit is 1500.
@@ -16,11 +16,16 @@ subscribe to private user streams, submit orders, or start automatically.
   the mark price associated with that funding charge (`markPrice`), and
   `rateType` (`Regular` or `Special`). The associated mark price is used
   directly; do not substitute spot price, contract close, or mark-price Kline.
-- Funding history shares a documented 500 requests / 5 minutes / IP limit
-  with `/fapi/v1/fundingInfo`. The client uses a 1.25-second inter-page pause,
-  bounded pagination, exponential retry, and honours numeric `Retry-After`
-  values on HTTP 429.
-- A full-page boundary is queried at its exact timestamp before advancing.
+- Funding requests with `limit <= 200` share 500 requests per five minutes
+  per IP with `/fapi/v1/fundingInfo`. Requests with `limit > 200` have a
+  separate 100-request limit per five minutes per IP. Each REST adapter waits
+  at least 0.65 seconds after a smaller request or 3.1 seconds after a larger
+  one before another funding request, including boundary probes and retries.
+  The inter-page pause defaults to 1.25 seconds. HTTP 429 retains bounded
+  exponential retries and honors numeric `Retry-After` from Binance.
+- A full-page boundary is queried at its exact timestamp with `limit=3`
+  before advancing. A third row makes the boundary ambiguous because only
+  two rate types are supported.
   A split event, changed funding rate or changed associated mark price
   invalidates the fetch and prevents completeness certification.
   A server retry delay over 60 seconds aborts the fetch so an operator can
@@ -30,7 +35,7 @@ subscribe to private user streams, submit orders, or start automatically.
 
 Official references:
 - https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data
-- https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Get-Funding-Rate-History
+- https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/market-data#get-funding-rate-history
 
 ## Manual collection
 
