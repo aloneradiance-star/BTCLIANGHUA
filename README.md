@@ -67,4 +67,22 @@ BAQS_DATABASE_URL=sqlite:////tmp/baqs-migration-smoke.db alembic upgrade head
 ```
 
 ## Engineering
-See `AGENTS.md`, `docs/PHASE1_CODEX_BRIEF.md` and Issue #1. Schema migrations live in `migrations/`. The next Phase 1 work adds deterministic indicators and state classification. A real-money phase requires separate risk, compliance and user authorization gates.
+See `AGENTS.md`, `docs/PHASE1_CODEX_BRIEF.md` and Issue #1. Schema migrations live in `migrations/`. Phase 1 now includes public REST/WebSocket ingestion, deterministic indicators and a research-only six-state classifier. A real-money phase requires separate risk, compliance and user authorization gates.
+
+## Phase 1 / Six-state market regime (Issue #4)
+After completing the **explicit public 30-day backfill** (see
+`docs/P1-02A_HISTORY_READINESS.md`) and running the public data collector,
+manually run one research observation:
+```bash
+python -m baqs.regime.runner --once
+```
+Optional continuous research-only polling:
+```bash
+python -m baqs.regime.runner --poll-seconds 15
+```
+`GET /api/v1/market/regimes?timeframe=5m` returns the latest verified
+research state or `UNAVAILABLE` with a reason when the latest snapshot or
+required candles are unavailable, or the collector connection is unhealthy.
+Other supported timeframe values expose historical snapshots only. Output is
+**not** a trade order, not a calibrated probability and not an investment
+recommendation. See `docs/P1-04_REGIME_CLASSIFIER.md`.

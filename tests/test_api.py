@@ -110,13 +110,11 @@ def test_regimes_are_scoped_to_requested_timeframe(db_engine: Engine) -> None:
     open_time = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
     durations = {
         "1m": timedelta(minutes=1),
-        "5m": timedelta(minutes=5),
         "15m": timedelta(minutes=15),
         "1h": timedelta(hours=1),
     }
     expected_regimes = {
         "1m": "TRANSITION",
-        "5m": "BULL_TREND",
         "15m": "RANGE",
         "1h": "BEAR_TREND",
     }
@@ -161,6 +159,7 @@ def test_regimes_are_scoped_to_requested_timeframe(db_engine: Engine) -> None:
         assert payload["timeframe"] == timeframe
         btc = payload["symbols"]["BTCUSDT"]
         assert btc["timeframe"] == timeframe
+        assert btc["status"] == "HISTORICAL_SNAPSHOT"
         assert btc["regime"] == expected_regime
         assert btc["features"]["timeframe_probe"] == timeframe
         eth = payload["symbols"]["ETHUSDT"]
@@ -169,7 +168,8 @@ def test_regimes_are_scoped_to_requested_timeframe(db_engine: Engine) -> None:
 
     default_payload = client.get("/api/v1/market/regimes").json()
     assert default_payload["timeframe"] == "5m"
-    assert default_payload["symbols"]["BTCUSDT"]["regime"] == "BULL_TREND"
+    assert default_payload["symbols"]["BTCUSDT"]["status"] == "UNAVAILABLE"
+    assert default_payload["symbols"]["BTCUSDT"]["reason"] == "5M_HISTORY_NO_DATA"
 
 
 def test_regimes_reject_unsupported_timeframe(db_engine: Engine) -> None:

@@ -16,6 +16,7 @@ from baqs.logging_config import configure_logging
 from baqs.market_data.repository import CandleStore, MarketStreamStore
 from baqs.market_data.schema import INTERVAL_MS
 from baqs.models import Candle, RegimeSnapshot
+from baqs.regime.service import RegimeResearchService
 from baqs.settings import Settings, get_settings
 
 SYMBOLS = ("BTCUSDT", "ETHUSDT")
@@ -168,51 +169,66 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
         request: Request,
         timeframe: str = Query(
             default="5m",
-            description="Candle timeframe; defaults to 5m. Supported values: 1m, 5m, 15m, 1h.",
+            description=(
+                "Supported values: 1m, 5m, 15m, 1h. "
+                "The current verified classifier runs on 5m; "
+                "other intervals expose historical snapshots."
+            ),
         ),
     ) -> dict[str, object]:
-        """Return the latest snapshot for the requested timeframe (default: 5m)."""
+        """Return a verified 5m classifier state or explicitly historical snapshots."""
         if timeframe not in TIMEFRAMES:
             raise HTTPException(status_code=422, detail="Invalid timeframe")
 
         output: dict[str, object] = {}
-        with Session(_engine(request)) as session:
+        if timeframe == "5m":
+            clock_ms = int(datetime.now(UTC).timestamp() * 1000)
+            service = RegimeResearchService(_engine(request))
             for symbol in SYMBOLS:
-                item = session.scalar(
-                    select(RegimeSnapshot)
-                    .where(
-                        RegimeSnapshot.symbol == symbol,
-                        RegimeSnapshot.timeframe == timeframe,
+                item = service.latest(symbol, clock_ms=clock_ms)
+                if item.get("status") == "UNAVAILABLE":
+                    item = {**item, "symbol": symbol, "timeframe": timeframe}
+                output[symbol] = item
+        else:
+            with Session(_engine(request)) as session:
+                for symbol in SYMBOLS:
+                    item = session.scalar(
+                        select(RegimeSnapshot)
+                        .where(
+                            RegimeSnapshot.symbol == symbol,
+                            RegimeSnapshot.timeframe == timeframe,
+                        )
+                        .order_by(
+                            RegimeSnapshot.candle_close_time.desc(),
+                            RegimeSnapshot.created_at.desc(),
+                            RegimeSnapshot.classifier_version.desc(),
+                        )
+                        .limit(1)
                     )
-                    .order_by(
-                        RegimeSnapshot.candle_close_time.desc(),
-                        RegimeSnapshot.created_at.desc(),
-                        RegimeSnapshot.classifier_version.desc(),
-                    )
-                    .limit(1)
-                )
-                if item is None:
-                    output[symbol] = {
-                        "status": "UNAVAILABLE",
-                        "symbol": symbol,
-                        "timeframe": timeframe,
-                        "reason": "NO_CLASSIFICATION",
-                    }
-                else:
-                    output[symbol] = {
-                        "status": "HISTORICAL_SNAPSHOT",
-                        "symbol": symbol,
-                        "timeframe": item.timeframe,
-                        "regime": item.regime,
-                        "candle_close_time": item.candle_close_time.isoformat(),
-                        "classifier_version": item.classifier_version,
-                        "features": item.features,
-                        "reasons": item.reasons,
-                    }
+                    if item is None:
+                        output[symbol] = {
+                            "status": "UNAVAILABLE",
+                            "symbol": symbol,
+                            "timeframe": timeframe,
+                            "reason": "NO_CLASSIFICATION",
+                        }
+                    else:
+                        output[symbol] = {
+                            "status": "HISTORICAL_SNAPSHOT",
+                            "symbol": symbol,
+                            "timeframe": timeframe,
+                            "regime": item.regime,
+                            "candle_close_time": item.candle_close_time.isoformat(),
+                            "classifier_version": item.classifier_version,
+                            "features": item.features,
+                            "reasons": item.reasons,
+                            "execution_enabled": False,
+                        }
         return {
             "observed_at": datetime.now(UTC).isoformat(),
             "timeframe": timeframe,
             "symbols": output,
+            "execution_enabled": False,
         }
 
     return app

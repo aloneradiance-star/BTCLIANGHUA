@@ -178,7 +178,13 @@ class CandleStore:
         end = datetime.fromtimestamp(anchored_end_ms / 1000, tz=UTC)
         with Session(self.engine) as session:
             rows = session.execute(
-                select(Candle.open_time, Candle.close_time)
+                select(
+                    Candle.open_time,
+                    Candle.close_time,
+                    Candle.quote_volume,
+                    Candle.trade_count,
+                    Candle.source,
+                )
                 .where(
                     Candle.symbol == symbol,
                     Candle.timeframe == timeframe,
@@ -191,13 +197,22 @@ class CandleStore:
         # All supported intervals have whole-second boundaries. Reject subsecond
         # data before the shared millisecond conversion can round it away.
         present_times = {
-            _milliseconds(open_time) for open_time, _ in rows if open_time.microsecond == 0
+            _milliseconds(open_time) for open_time, *_ in rows if open_time.microsecond == 0
         }
         invalid_close_count = sum(
             open_time.microsecond != 0
             or close_time.microsecond != 0
             or _milliseconds(close_time) != _milliseconds(open_time) + step
-            for open_time, close_time in rows
+            for open_time, close_time, *_ in rows
+        )
+        invalid_metadata_count = sum(
+            quote_volume is None
+            or not quote_volume.is_finite()
+            or quote_volume < 0
+            or type(trade_count) is not int
+            or trade_count < 0
+            or source not in {"REST", "WS"}
+            for _, _, quote_volume, trade_count, source in rows
         )
         first_missing_open_ms = next(
             (
@@ -216,6 +231,7 @@ class CandleStore:
         elif (
             len(rows) == required_bars
             and invalid_close_count == 0
+            and invalid_metadata_count == 0
             and first_missing_open_ms is None
         ):
             status = "READY"
@@ -230,6 +246,7 @@ class CandleStore:
             "required_bars": required_bars,
             "present_bars": len(rows),
             "invalid_close_count": invalid_close_count,
+            "invalid_metadata_count": invalid_metadata_count,
             "anchored_end_ms": anchored_end_ms,
             "earliest_expected_open_ms": start_ms,
             "last_expected_open_ms": anchored_end_ms - step,
