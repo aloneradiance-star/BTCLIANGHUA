@@ -13,7 +13,13 @@ from baqs.db import make_engine
 from baqs.logging_config import configure_logging
 from baqs.market_data.repository import STREAM_IDLE_TIMEOUT_SECONDS, CandleStore, MarketStreamStore
 from baqs.market_data.rest import PUBLIC_BASE_URL, PublicFuturesREST
-from baqs.market_data.schema import INTERVAL_MS, SYMBOLS, MarketDataError, from_ws_message
+from baqs.market_data.schema import (
+    INTERVAL_MS,
+    SYMBOLS,
+    InvalidCandle,
+    MarketDataError,
+    from_ws_message,
+)
 from baqs.market_data.service import PublicMarketDataService
 from baqs.settings import get_settings
 
@@ -72,6 +78,8 @@ async def run_collector() -> None:
                                 received_ms = time_ns() // 1_000_000
                                 candle = from_ws_message(json.loads(message))
                                 if candle is not None:
+                                    if candle.close_ms > received_ms:
+                                        raise InvalidCandle("WebSocket candle closes after receipt")
                                     await service.ingest(candle)
                                     backoff = 1.0
                                 current = loop.time()

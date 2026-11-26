@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
@@ -33,7 +34,10 @@ def test_health_reports_no_execution(db_engine: Engine) -> None:
     assert data["market_data"] == "UNAVAILABLE"
 
 
-def test_market_readiness_requires_fresh_candles_and_connected_collector(db_engine: Engine) -> None:
+@pytest.mark.parametrize("future_btc_candle", [False, True], ids=["current", "future"])
+def test_market_readiness_requires_fresh_candles_and_connected_collector(
+    db_engine: Engine, future_btc_candle: bool
+) -> None:
     now_ms = int(datetime.now(UTC).timestamp() * 1000)
     client = client_for(db_engine)
     collector = MarketStreamStore(db_engine)
@@ -45,6 +49,8 @@ def test_market_readiness_requires_fresh_candles_and_connected_collector(db_engi
     for symbol in SYMBOLS:
         for timeframe, step in INTERVAL_MS.items():
             close_ms = now_ms // step * step
+            if future_btc_candle and (symbol, timeframe) == ("BTCUSDT", "1m"):
+                close_ms += 31 * step
             store.upsert(
                 FinalCandle(
                     symbol,
@@ -66,7 +72,7 @@ def test_market_readiness_requires_fresh_candles_and_connected_collector(db_engi
         (now_ms - 60_000, "STALE", 503),
         (now_ms + 60_000, "STALE", 503),
         (None, "DISCONNECTED", 503),
-        (now_ms, "CONNECTED", 200),
+        (now_ms, "CONNECTED", 503 if future_btc_candle else 200),
     ):
         collector.record_message(last_message)
         response = client.get("/api/v1/health")
@@ -74,7 +80,11 @@ def test_market_readiness_requires_fresh_candles_and_connected_collector(db_engi
         assert response.json()["execution_enabled"] is False
         details = client.get("/api/v1/market/health").json()
         assert details["collector"] == {"status": status, "last_message_ms": last_message}
-        assert details["feeds"]["BTCUSDT"]["1m"]["status"] == "READY"
+        expected_feed_status = "STALE" if future_btc_candle else "READY"
+        assert details["feeds"]["BTCUSDT"]["1m"]["status"] == expected_feed_status
+
+    persisted = client.get("/api/v1/market/candles?symbol=BTCUSDT&timeframe=1m").json()
+    assert len(persisted["items"]) == (0 if future_btc_candle else 1)
 
 
 def test_market_health_no_data_does_not_claim_ready(db_engine: Engine) -> None:

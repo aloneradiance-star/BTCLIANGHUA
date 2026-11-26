@@ -184,6 +184,7 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
                     Candle.symbol == symbol,
                     Candle.timeframe == timeframe,
                     Candle.is_final.is_(True),
+                    Candle.close_time <= datetime.now(UTC),
                 )
                 .order_by(Candle.open_time.desc())
                 .limit(limit)
