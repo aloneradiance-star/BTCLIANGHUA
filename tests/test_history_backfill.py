@@ -254,11 +254,12 @@ def test_partial_chunk_crash_resumes_without_duplicate_inserts(db_engine: Engine
             super().__init__(engine)
             self.attempts = 0
 
-        def upsert(self, candle: FinalCandle) -> str:
-            self.attempts += 1
-            if self.attempts == 7:
+        def upsert_many(self, candles: list[FinalCandle]) -> list[str]:
+            self.attempts += len(candles)
+            if self.attempts >= 7:
+                super().upsert_many(candles[:6])
                 raise RuntimeError("Injected crash halfway through a chunk")
-            return super().upsert(candle)
+            return super().upsert_many(candles)
 
     async def run() -> None:
         failing_store = FailingStore(db_engine)
@@ -281,5 +282,57 @@ def test_partial_chunk_crash_resumes_without_duplicate_inserts(db_engine: Engine
         assert recovered.created_bars == 114
         assert recovered.fetched_bars == 120
         assert recovered.reused_chunks == 0
+
+    asyncio.run(run())
+
+
+def test_1m_execution_backfill_supports_30d_default_and_chunk_resume(db_engine: Engine) -> None:
+    from baqs.market_data.history import DEFAULT_BARS, MAX_BACKFILL_BARS
+
+    minute = 60_000
+    anchor = 100 * minute
+
+    class MinuteReader:
+        async def server_time_ms(self) -> int:
+            return anchor
+
+        async def fetch_range(
+            self,
+            symbol: str,
+            timeframe: str,
+            start_ms: int,
+            end_ms: int,
+            *,
+            max_bars: int = 2000,
+            page_size: int = 499,
+        ) -> list[FinalCandle]:
+            assert symbol == "BTCUSDT" and timeframe == "1m"
+            assert (end_ms - start_ms) // minute <= max_bars
+            return [
+                FinalCandle(
+                    symbol,
+                    timeframe,
+                    open_ms,
+                    open_ms + minute,
+                    Decimal(100),
+                    Decimal(102),
+                    Decimal(99),
+                    Decimal(101),
+                    Decimal(1),
+                    Decimal(100),
+                    5,
+                    "REST",
+                )
+                for open_ms in range(start_ms, end_ms, minute)
+            ]
+
+    async def run() -> None:
+        assert DEFAULT_BARS["1m"] == 43_200
+        assert MAX_BACKFILL_BARS >= DEFAULT_BARS["1m"]
+        report = await PublicHistoryBackfill(
+            MinuteReader(), CandleStore(db_engine), chunk_bars=20, pause_seconds=0
+        ).run("BTCUSDT", "1m", bars=60)
+        assert report.readiness == "READY"
+        assert report.created_bars == 60
 
     asyncio.run(run())

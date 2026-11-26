@@ -25,6 +25,14 @@ class CandleConflict(MarketDataError):
     """An already finalized historical candle has conflicting values."""
 
 
+class FundingConflict(MarketDataError):
+    """An immutable public funding event or coverage manifest conflicts."""
+
+
+class FundingGap(MarketDataError):
+    """Funding history or its exact completeness manifest is incomplete."""
+
+
 def _ms_datetime(value: int) -> datetime:
     return datetime.fromtimestamp(value / 1000, tz=UTC)
 
@@ -170,4 +178,63 @@ def from_ws_message(payload: object) -> FinalCandle | None:
         _as_decimal(k.get("q")),
         count,
         "WS",
+    )
+
+
+def _exact_decimal_text(value: Decimal) -> str:
+    text = format(value, "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+@dataclass(frozen=True, slots=True)
+class FundingRateRecord:
+    """One public USD-M funding settlement with Binance's associated mark price."""
+
+    symbol: str
+    funding_time_ms: int
+    funding_rate: Decimal
+    mark_price: Decimal
+    rate_type: str
+    source: str = "BINANCE_PUBLIC_FAPI_FUNDING_RATE"
+
+    def __post_init__(self) -> None:
+        if self.symbol not in SYMBOLS:
+            raise InvalidCandle("Unsupported funding symbol")
+        if type(self.funding_time_ms) is not int or self.funding_time_ms < 0:
+            raise InvalidCandle("Funding time must be a nonnegative integer in milliseconds")
+        if (
+            not self.funding_rate.is_finite()
+            or not self.mark_price.is_finite()
+            or self.mark_price <= 0
+        ):
+            raise InvalidCandle("Funding rate and associated mark price must be finite")
+        if self.rate_type not in {"Regular", "Special"}:
+            raise InvalidCandle("Funding rate type must be Regular or Special")
+        if not self.source:
+            raise InvalidCandle("Funding event source is required")
+
+    def fingerprint(self) -> tuple[str, int, str, str, str, str]:
+        return (
+            self.symbol,
+            self.funding_time_ms,
+            _exact_decimal_text(self.funding_rate),
+            _exact_decimal_text(self.mark_price),
+            self.rate_type,
+            self.source,
+        )
+
+
+def from_funding_row(symbol: str, row: object) -> FundingRateRecord:
+    """Parse documented GET /fapi/v1/fundingRate fields without silent defaults."""
+    if not isinstance(row, dict) or row.get("symbol") != symbol:
+        raise InvalidCandle("Funding history symbol or response object is invalid")
+    rate_type = row.get("rateType")
+    if not isinstance(rate_type, str):
+        raise InvalidCandle("Funding history rateType is missing")
+    return FundingRateRecord(
+        symbol=symbol,
+        funding_time_ms=_as_ms(row.get("fundingTime")),
+        funding_rate=_as_decimal(row.get("fundingRate")),
+        mark_price=_as_decimal(row.get("markPrice")),
+        rate_type=rate_type,
     )

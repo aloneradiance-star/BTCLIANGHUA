@@ -262,7 +262,7 @@ def test_cost_and_risk_inputs_fail_closed() -> None:
     with pytest.raises(ValueError):
         BacktestConfig(max_notional_fraction=Decimal("1.01"))
     with pytest.raises(ValueError):
-        FundingCoverage(START, START + 120_000, (START + 60_000, START + 60_000), True)
+        FundingCoverage(START, START + 120_000, (START + 120_000, START + 60_000), True)
 
 
 def test_funding_manifest_must_match_exact_backtest_window() -> None:
@@ -348,3 +348,41 @@ def test_nonpositive_short_take_profit_is_skipped() -> None:
     result = run(bars, [signal("SHORT", "250")])
     assert result.trades == ()
     assert result.skipped_signals[0].reason == "NONPOSITIVE_TAKE_PROFIT"
+
+
+def test_regular_and_special_funding_at_same_boundary_are_both_applied() -> None:
+    bars = [
+        bar(0),
+        bar(1, open_="100", high="125", low="99", close="120"),
+        bar(2),
+    ]
+    funding_time = START + 60_000
+    events = [
+        FundingEvent("BTCUSDT", funding_time, Decimal(".001"), Decimal(100)),
+        FundingEvent(
+            "BTCUSDT",
+            funding_time,
+            Decimal(".0005"),
+            Decimal(101),
+            rate_type="Special",
+        ),
+    ]
+    result = run(
+        bars,
+        [signal()],
+        events=events,
+        expected=(funding_time, funding_time),
+    )
+    assert result.trades[0].funding_cost > Decimal(".14")
+
+
+def test_duplicate_same_rate_type_funding_event_is_rejected() -> None:
+    funding_time = START + 60_000
+    event = FundingEvent("BTCUSDT", funding_time, Decimal(".001"), Decimal(100))
+    with pytest.raises(BacktestUnavailable, match="Duplicate funding event key"):
+        run(
+            [bar(0), bar(1), bar(2)],
+            [signal()],
+            events=[event, event],
+            expected=(funding_time, funding_time),
+        )

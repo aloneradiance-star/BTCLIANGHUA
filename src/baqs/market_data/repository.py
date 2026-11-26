@@ -1,5 +1,6 @@
 """Immutable finalized-candle storage and window-based health checks."""
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from time import time_ns
 from typing import Literal
@@ -55,57 +56,64 @@ class CandleStore:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
 
-    def upsert(self, candle: FinalCandle) -> StoreResult:
+    def upsert_many(self, candles: Sequence[FinalCandle]) -> list[StoreResult]:
+        """Commit one verified chunk atomically instead of one transaction per candle."""
+        results: list[StoreResult] = []
         with Session(self.engine) as session:
-            existing = session.get(Candle, (candle.symbol, candle.timeframe, candle.open_time))
-            if existing is None:
-                session.add(
-                    Candle(
-                        symbol=candle.symbol,
-                        timeframe=candle.timeframe,
-                        open_time=candle.open_time,
-                        close_time=candle.close_time,
-                        open=candle.open,
-                        high=candle.high,
-                        low=candle.low,
-                        close=candle.close,
-                        volume=candle.volume,
-                        quote_volume=candle.quote_volume,
-                        trade_count=candle.trade_count,
-                        is_final=True,
-                        source=candle.source,
+            for candle in candles:
+                existing = session.get(Candle, (candle.symbol, candle.timeframe, candle.open_time))
+                if existing is None:
+                    session.add(
+                        Candle(
+                            symbol=candle.symbol,
+                            timeframe=candle.timeframe,
+                            open_time=candle.open_time,
+                            close_time=candle.close_time,
+                            open=candle.open,
+                            high=candle.high,
+                            low=candle.low,
+                            close=candle.close,
+                            volume=candle.volume,
+                            quote_volume=candle.quote_volume,
+                            trade_count=candle.trade_count,
+                            is_final=True,
+                            source=candle.source,
+                        )
                     )
+                    results.append("CREATED")
+                    continue
+                old_fingerprint = (
+                    existing.open,
+                    existing.high,
+                    existing.low,
+                    existing.close,
+                    existing.volume,
+                    existing.quote_volume,
+                    existing.trade_count,
                 )
-                session.commit()
-                return "CREATED"
-            old_fingerprint = (
-                existing.open,
-                existing.high,
-                existing.low,
-                existing.close,
-                existing.volume,
-                existing.quote_volume,
-                existing.trade_count,
-            )
-            # SQLite fixture NUMERIC conversion is approximate; tests use whole-number prices.
-            if existing.is_final:
-                if old_fingerprint != candle.fingerprint() or (
-                    _milliseconds(existing.close_time) != candle.close_ms
-                ):
-                    raise CandleConflict("Finalized candle conflicts with persisted data")
-                return "DUPLICATE"
-            existing.open = candle.open
-            existing.high = candle.high
-            existing.low = candle.low
-            existing.close = candle.close
-            existing.volume = candle.volume
-            existing.quote_volume = candle.quote_volume
-            existing.trade_count = candle.trade_count
-            existing.close_time = candle.close_time
-            existing.is_final = True
-            existing.source = candle.source
+                if existing.is_final:
+                    if old_fingerprint != candle.fingerprint() or (
+                        _milliseconds(existing.close_time) != candle.close_ms
+                    ):
+                        raise CandleConflict("Finalized candle conflicts with persisted data")
+                    results.append("DUPLICATE")
+                    continue
+                existing.open = candle.open
+                existing.high = candle.high
+                existing.low = candle.low
+                existing.close = candle.close
+                existing.volume = candle.volume
+                existing.quote_volume = candle.quote_volume
+                existing.trade_count = candle.trade_count
+                existing.close_time = candle.close_time
+                existing.is_final = True
+                existing.source = candle.source
+                results.append("PROMOTED")
             session.commit()
-            return "PROMOTED"
+        return results
+
+    def upsert(self, candle: FinalCandle) -> StoreResult:
+        return self.upsert_many([candle])[0]
 
     def latest_open_ms(self, symbol: str, timeframe: str) -> int | None:
         with Session(self.engine) as session:
@@ -167,7 +175,7 @@ class CandleStore:
         step = INTERVAL_MS[timeframe]
         if (
             type(required_bars) is not int
-            or not 1 <= required_bars <= 10_000
+            or not 1 <= required_bars <= 50_000
             or type(anchored_end_ms) is not int
             or anchored_end_ms < required_bars * step
             or anchored_end_ms % step

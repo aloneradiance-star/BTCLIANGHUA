@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from baqs.db import make_engine
 from baqs.logging_config import configure_logging
+from baqs.market_data.funding import FundingStore
 from baqs.market_data.repository import CandleStore, MarketStreamStore
 from baqs.market_data.schema import INTERVAL_MS
 from baqs.models import Candle, RegimeSnapshot
@@ -122,6 +123,48 @@ def create_app(*, settings: Settings | None = None, engine: Engine | None = None
                 }
                 for symbol in SYMBOLS
             },
+            "execution_enabled": False,
+        }
+
+    @app.get("/api/v1/market/backtest-readiness")
+    def backtest_readiness(
+        request: Request,
+        start_ms: int = Query(..., ge=0),
+        end_ms: int = Query(..., gt=0),
+    ) -> dict[str, object]:
+        """Read-only gate for exact 1m execution and funding-history coverage."""
+        if (
+            start_ms % 60_000
+            or end_ms % 60_000
+            or end_ms <= start_ms
+            or (end_ms - start_ms) // 60_000 > 50_000
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Backtest window must be 1m-aligned and contain 1..50000 bars",
+            )
+        engine = _engine(request)
+        candles_store = CandleStore(engine)
+        funding_store = FundingStore(engine)
+        required_bars = (end_ms - start_ms) // 60_000
+        symbols: dict[str, object] = {}
+        for symbol in SYMBOLS:
+            execution = candles_store.history_readiness(
+                symbol, "1m", end_ms, required_bars=required_bars, require_latest=False
+            )
+            funding = funding_store.coverage_readiness(
+                symbol, start_ms, end_ms, require_minute_aligned=True
+            )
+            ready = execution["status"] == "READY" and funding["status"] == "READY"
+            symbols[symbol] = {
+                "status": "READY" if ready else "UNAVAILABLE",
+                "execution_1m": execution,
+                "funding": funding,
+            }
+        return {
+            "start_ms": start_ms,
+            "end_ms": end_ms,
+            "symbols": symbols,
             "execution_enabled": False,
         }
 
